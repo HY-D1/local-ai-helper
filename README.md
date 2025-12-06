@@ -1,6 +1,6 @@
 # Local AI Helper with Memory
 
-A containerized multi-mode AI assistant using open-source LLMs, featuring persistent memory and specialized task modes.
+A containerized multi-mode AI assistant built on open-source LLMs, featuring persistent memory and specialized task modes.
 
 ## Features
 
@@ -55,37 +55,28 @@ A containerized multi-mode AI assistant using open-source LLMs, featuring persis
 git clone https://github.com/HY-D1/local-ai-helper.git
 cd local-ai-helper
 
-# Start all services
+# Start all services (creates the required Docker network automatically)
 docker-compose up -d
 
-# Wait ~30 seconds for services to initialize
-sleep 30
+# Wait for containers to become healthy
+docker-compose ps
 
-# Open UI
-open http://localhost:8501  # macOS
-# or visit http://localhost:8501 in browser
+# Open the UI
+# macOS: open http://localhost:8501
+# Others: visit http://localhost:8501 in your browser
 ```
 
-### First Time Setup
-
-1. **Download a Model** (in UI):
-   - Open sidebar → "📦 Download Models"
-   - Click "⬇️ Download" on Llama 3.2 (3B) - recommended
-   - Wait 5-10 minutes (2GB download)
-
-2. **Start Chatting**:
-   - Select agent mode (💬 General, 🔢 Math, 💻 Code, etc.)
-   - Type message and press Enter
-   - Memory is enabled by default
+### First-Time Setup in the UI
+1. **Download a Model**: Sidebar → "📦 Download Models" → "⬇️ Download" on **Llama 3.2 (3B)** (recommended). Allow 5–10 minutes for the ~2GB download.
+2. **Start Chatting**: Pick an agent mode (💬 General, 🔢 Math, 💻 Code, ✍️ Writing, 🎨 Design), type a message, and press Enter. Memory is on by default.
 
 ### Verify Installation
 
 ```bash
-# Run automated tests
+# Smoke test suite
 ./test_features.sh
 
-# Should see:
-# ✅ Pass (5/5 tests)
+# Expected output includes: ✅ Pass (5/5 tests)
 ```
 
 ## Project Structure
@@ -147,41 +138,30 @@ pip install -r requirements.txt
 # Start Ollama separately
 ollama serve
 
-# Run app
+# Run the web UI
 streamlit run src/ui/streamlit_app.py
+
+# Or start the API directly
+uvicorn src.api.main:app --reload --port 8000
 ```
 
 ### Using Make Commands
 ```bash
-make setup       # Initial setup
-make start       # Start all services
-make logs        # View logs
-make test        # Run tests
-make stop        # Stop services
+make setup       # Install Python deps locally
+make start       # docker-compose up -d
+make logs        # Tail container logs
+make test        # pytest tests/ -v
+make stop        # Stop containers
+make clean       # Remove containers & volumes
 ```
 
 ### Running Tests
 ```bash
 pytest tests/ -v
-# Or with coverage
+
+# With coverage report
 pytest tests/ --cov=src --cov-report=html
 ```
-
-## Configuration
-
-### Adjust Response Speed
-In UI sidebar → "⚙️ Advanced":
-- **Temperature**: 0.1 (focused) to 1.0 (creative)
-- **Max Length**: 128 (fast) to 2048 (detailed)
-
-Recommended for speed: Temperature 0.7, Length 512
-
-### Agent Modes
-- **💬 General**: Everyday questions
-- **🔢 Math**: Step-by-step problem solving  
-- **💻 Code**: Programming help, debugging
-- **✍️ Writing**: Essays, emails, creative content
-- **🎨 Design**: UI/UX guidance
 
 ## Troubleshooting
 
@@ -198,7 +178,7 @@ docker-compose restart
 ```
 
 ### "GPU driver error" on Mac
-Edit `docker-compose.yml` - comment out GPU section under `ollama:` service (lines with `deploy:`, `nvidia`, `gpu`)
+Comment out the GPU block for the `ollama` service in `docker-compose.yml` (lines containing `deploy`, `nvidia`, and `gpu`).
 
 ### Memory not working
 ```bash
@@ -209,52 +189,18 @@ curl http://localhost:8001/api/v1/collections
 ```
 
 ### Slow responses
-- Use smaller model (Llama 3.2 3B vs 8B)
-- Reduce max_tokens in sidebar settings
+- Use a smaller model (Llama 3.2 3B vs 8B)
+- Reduce `max_tokens` in sidebar settings
 - Ensure Docker has 4GB+ RAM allocated
-
-## Development
-
-### Local Setup (without Docker)
-```bash
-python -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-
-# Start Ollama separately
-ollama serve
-
-# Run components
-uvicorn src.api.main:app --reload --port 8000
-streamlit run src/ui/streamlit_app.py --server.port 8501
-```
-
-### Using Make Commands
-```bash
-make setup       # Initial setup
-make start       # Start all services
-make logs        # View logs
-make test        # Run tests
-make stop        # Stop services
-make clean       # Remove containers & volumes
-```
-
-### Running Tests
-```bash
-./test_features.sh
-
-# Or individual tests
-pytest tests/ -v
-```
 
 ## Performance Benchmarks
 
 | Model | Size | Response Time | Memory | Quality |
 |-------|------|--------------|--------|---------|
-| Llama 3.2 3B | 2.0 GB | 1.5s | 3.2 GB | Good |
-| Llama 3.2 8B | 4.7 GB | 3.2s | 6.2 GB | Excellent |
-| Phi-3 Mini | 2.3 GB | 1.1s | 3.8 GB | Very Good |
-| Mistral 7B | 4.1 GB | 2.8s | 5.9 GB | Excellent |
+| Llama 3.2 3B | 2.0 GB | ~1.5s | 3.2 GB | Good |
+| Llama 3.2 8B | 4.7 GB | ~3.2s | 6.2 GB | Excellent |
+| Phi-3 Mini | 2.3 GB | ~1.1s | 3.8 GB | Very Good |
+| Mistral 7B | 4.1 GB | ~2.8s | 5.9 GB | Excellent |
 
 *Tested on M1 Mac, 16GB RAM*
 
