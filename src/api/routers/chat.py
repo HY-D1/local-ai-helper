@@ -113,20 +113,30 @@ async def chat_stream(request: ChatRequest, api_request: Request):
         async def generate_stream():
             full_response = ""
             conversation_id = str(uuid4())
-            model_used = request.model or "llama3.2:3b"
+            model_used = request.model or ""
 
-            async for chunk in agent_controller.generate_stream(
-                message=request.message,
-                agent_mode=request.agent_mode,
-                model=request.model,
-                context=context,
-                temperature=request.temperature,
-                max_tokens=request.max_tokens,
-            ):
-                full_response += chunk.get("text", "")
-                yield f"data: {json.dumps({'text': chunk.get('text', ''), 'done': False})}\n\n"
+            try:
+                async for chunk in agent_controller.generate_stream(
+                    message=request.message,
+                    agent_mode=request.agent_mode,
+                    model=request.model,
+                    context=context,
+                    temperature=request.temperature,
+                    max_tokens=request.max_tokens,
+                ):
+                    text_chunk = chunk.get("text", "")
+                    if not model_used:
+                        model_used = chunk.get("model_used", "")
+                    full_response += text_chunk
+                    yield f"data: {json.dumps({'text': text_chunk, 'done': False})}\n\n"
+            except Exception as exc:  # noqa: BLE001
+                logger.error("Stream generation failed: %s", exc)
+                yield f"data: {json.dumps({'error': str(exc), 'done': True})}\n\n"
+                return
 
-            if request.use_memory:
+            model_used = model_used or request.model or "unknown"
+
+            if request.use_memory and full_response:
                 await memory_manager.store_conversation(
                     session_id=session_id,
                     conversation_id=conversation_id,
@@ -136,7 +146,7 @@ async def chat_stream(request: ChatRequest, api_request: Request):
                     model_used=model_used,
                 )
 
-            yield f"data: {json.dumps({'done': True, 'session_id': session_id, 'conversation_id': conversation_id})}\n\n"
+            yield f"data: {json.dumps({'done': True, 'session_id': session_id, 'conversation_id': conversation_id, 'model_used': model_used})}\n\n"
 
         return StreamingResponse(
             generate_stream(),

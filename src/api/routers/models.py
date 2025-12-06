@@ -76,19 +76,46 @@ async def pull_model(request: PullModelRequest):
         if request.model_name not in model_names:
             raise HTTPException(status_code=400, detail="Model not in configured list")
 
+        try:
+            installed = ollama.list()
+            installed_names = [m.get("name") for m in installed.get("models", [])]
+            if request.model_name in installed_names:
+                raise HTTPException(status_code=400, detail="Model already installed")
+        except HTTPException:
+            raise
+        except Exception:
+            installed_names = []
+
         task_id = str(uuid.uuid4())
         TASKS[task_id] = {"status": "in_progress", "model": request.model_name, "action": "pull"}
 
-        async def run_pull():
+        def run_pull():
             try:
-                await asyncio.get_running_loop().run_in_executor(
-                    None, lambda: ollama.pull(request.model_name)
-                )
-                TASKS[task_id].update({"status": "completed"})
+                for chunk in ollama.pull(request.model_name, stream=True):
+                    status = chunk.get("status") or "in_progress"
+                    total = chunk.get("total")
+                    completed = chunk.get("completed")
+                    percent = None
+
+                    try:
+                        if total and completed is not None:
+                            percent = int((completed / total) * 100)
+                    except Exception:  # pragma: no cover - defensive parsing
+                        percent = None
+
+                    TASKS[task_id].update(
+                        {
+                            "status": status,
+                            "percent": percent if percent is not None else TASKS[task_id].get("percent"),
+                            "detail": chunk.get("digest") or chunk.get("detail") or status,
+                        }
+                    )
+
+                TASKS[task_id].update({"status": "completed", "percent": 100})
             except Exception as exc:  # pragma: no cover - network/ollama dependent
                 TASKS[task_id].update({"status": "error", "detail": str(exc)})
 
-        asyncio.create_task(run_pull())
+        asyncio.get_running_loop().run_in_executor(None, run_pull)
 
         return {"status": "in_progress", "task_id": task_id, "model": request.model_name}
     except HTTPException:
