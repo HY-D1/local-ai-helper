@@ -3,13 +3,14 @@ Streamlit UI - Claude-inspired with real-time streaming
 """
 import json
 import os
+import time
 import uuid
 
 import requests
 import streamlit as st
 
 API_URL = os.getenv("API_URL", "http://localhost:8000")
-FALLBACK_MODEL = "llama3.2:8b"
+FALLBACK_MODEL = "qwen2.5:7b"
 
 st.set_page_config(page_title="Local AI Helper", page_icon="🤖", layout="wide")
 
@@ -97,9 +98,9 @@ st.markdown("""
         padding: 1.25rem;
         border-radius: 0.75rem;
         margin: 0.85rem 0;
-        background: #0b1220;
+        background: linear-gradient(145deg, rgba(23, 37, 84, 0.65), rgba(15, 118, 110, 0.18));
         border: 1px solid rgba(255, 255, 255, 0.08);
-        box-shadow: 0 14px 50px rgba(0, 0, 0, 0.3);
+        box-shadow: 0 14px 50px rgba(0, 0, 0, 0.28);
     }
 
     [data-testid="stChatMessage"][data-testid*="user"] {
@@ -108,6 +109,25 @@ st.markdown("""
 
     [data-testid="stChatMessage"][data-testid*="assistant"] {
         border-left: 4px solid #22c55e;
+    }
+
+    /* Chat input tweaks */
+    [data-testid="stChatInput"] > div {
+        background: linear-gradient(135deg, rgba(15, 23, 42, 0.8), rgba(34, 197, 94, 0.06));
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 0.9rem !important;
+        box-shadow: 0 18px 60px rgba(0, 0, 0, 0.32);
+        padding: 0.35rem 0.4rem;
+    }
+
+    [data-testid="stChatInput"] textarea {
+        color: #e5e7eb !important;
+        background: transparent !important;
+        border: none !important;
+    }
+
+    [data-testid="stChatInput"] label p {
+        color: #cbd5f5 !important;
     }
 
     /* Loading animation */
@@ -189,6 +209,40 @@ def load_models():
     except Exception:
         return [], FALLBACK_MODEL, FALLBACK_MODEL
 
+
+def _quality_score(label: str) -> int:
+    order = ["excellent", "very good", "good", "ok"]
+    label = (label or "").lower()
+    for idx, tag in enumerate(order[::-1]):
+        if tag in label:
+            return idx + 1
+    return 0
+
+
+def model_for_mode(mode: str, models: list[dict[str, str]], installed: list[str], recommended: str):
+    """Pick the best installed model for a mode when available."""
+    installed_set = set(installed)
+    candidates = [m for m in models if mode in m.get("best_for", [])]
+    candidates.sort(
+        key=lambda m: (_quality_score(m.get("quality", "")), m.get("size", "")),
+        reverse=True,
+    )
+
+    for candidate in candidates:
+        if candidate["name"] in installed_set:
+            return candidate["name"], candidate
+
+    if recommended in installed_set:
+        rec_model = next((m for m in models if m.get("name") == recommended), None)
+        return recommended, rec_model
+
+    if installed:
+        fallback = installed[0]
+        fallback_model = next((m for m in models if m.get("name") == fallback), None)
+        return fallback, fallback_model
+
+    return recommended, next((m for m in models if m.get("name") == recommended), None)
+
 def stream_response(message, agent_mode, model, use_memory, temp, tokens):
     try:
         with requests.post(
@@ -231,9 +285,25 @@ def stream_response(message, agent_mode, model, use_memory, temp, tokens):
 st.session_state.api_status = check_api_health()
 models, _default_model, recommended_model = load_models()
 installed = [m for m in models if m.get('installed')]
-model_choices = [m['name'] for m in installed] or [recommended_model]
+installed_names = [m['name'] for m in installed]
+models_by_name = {m["name"]: m for m in models}
+
+recommended_installed = (
+    recommended_model
+    if recommended_model in installed_names
+    else (installed_names[0] if installed_names else recommended_model)
+)
+
+model_choices = installed_names or [recommended_installed]
 if st.session_state.model not in model_choices:
-    st.session_state.model = recommended_model
+    st.session_state.model = recommended_installed
+
+preset_model_name, preset_model_meta = model_for_mode(
+    st.session_state.agent_mode,
+    models,
+    installed_names,
+    recommended_model,
+)
 
 # Sidebar
 with st.sidebar:
@@ -249,8 +319,27 @@ with st.sidebar:
     modes = {'general': '💬 General', 'math': '🔢 Math', 'code': '💻 Code', 'writing': '✍️ Writing', 'design': '🎨 Design'}
     st.session_state.agent_mode = st.selectbox("", list(modes.keys()), format_func=lambda x: modes[x], label_visibility="collapsed")
 
+    preset_model_name, preset_model_meta = model_for_mode(
+        st.session_state.agent_mode,
+        models,
+        installed_names,
+        recommended_model,
+    )
+    if preset_model_meta:
+        st.caption(
+            f"Suggested for {modes[st.session_state.agent_mode]}: "
+            f"{preset_model_meta.get('display_name', preset_model_name)}"
+        )
+        if preset_model_name and preset_model_name != st.session_state.model:
+            if st.button("Use mode preset", use_container_width=True):
+                st.session_state.model = preset_model_name
+                st.rerun()
+
     st.markdown("**Model**")
     st.session_state.model = st.selectbox("", model_choices, label_visibility="collapsed", help="Pick an installed model. Download one below if the list is empty.")
+
+    if st.session_state.model not in installed_names and installed_names:
+        st.warning("Previously selected model is missing. Using the closest installed option instead.")
 
     use_memory = st.checkbox("💾 Memory", True)
 
@@ -314,7 +403,21 @@ with st.sidebar:
         if not installed:
             st.info("Download a model to start chatting.")
         for m in models:
-            st.markdown(f"**{m['display_name']}** • {m['size']}")
+            badges = []
+            if m['name'] == recommended_model:
+                badges.append("recommended")
+            if m['name'] == preset_model_name:
+                badges.append("preset")
+
+            badge_text = " • ".join(badges)
+            st.markdown(
+                f"**{m['display_name']}** • {m['size']} • {m.get('quality', '').title()}"
+                + (f" • {badge_text}" if badge_text else "")
+            )
+            if m.get("strengths"):
+                st.caption(m["strengths"])
+            if m.get("best_for"):
+                st.caption("Best for: " + ", ".join(m.get("best_for", [])))
 
             if m.get('installed'):
                 col1, col2 = st.columns([3, 1])
@@ -331,12 +434,54 @@ with st.sidebar:
                         st.rerun()
             else:
                 if st.button("⬇️ Download", key=f"dl{m['name']}", use_container_width=True):
-                    with st.spinner("Downloading... (5-10 min)"):
-                        try:
-                            requests.post(f"{API_URL}/api/v1/models/pull", json={"model_name": m['name']}, timeout=900)
-                            st.success("Done!")
-                        except Exception:
-                            st.error("Failed")
+                    status_placeholder = st.empty()
+                    detail_placeholder = st.empty()
+                    progress_bar = st.progress(0, text="Starting download...")
+
+                    try:
+                        resp = requests.post(
+                            f"{API_URL}/api/v1/models/pull",
+                            json={"model_name": m['name']},
+                            timeout=30,
+                        )
+                        if resp.status_code != 200:
+                            try:
+                                detail = resp.json().get('detail', resp.text)
+                            except Exception:
+                                detail = resp.text
+                            status_placeholder.error(detail or 'Failed to start download')
+                        else:
+                            task_id = resp.json().get("task_id")
+                            if not task_id:
+                                status_placeholder.error("Download task not created")
+                            else:
+                                for _ in range(900):  # up to ~15 minutes
+                                    time.sleep(1)
+                                    task_resp = requests.get(
+                                        f"{API_URL}/api/v1/models/tasks/{task_id}", timeout=10
+                                    )
+                                    if task_resp.status_code != 200:
+                                        status_placeholder.error("Unable to fetch progress")
+                                        break
+
+                                    task = task_resp.json()
+                                    percent = task.get("percent")
+                                    status_text = task.get("status", "in_progress")
+                                    detail_placeholder.caption(task.get("detail", status_text))
+
+                                    if percent is not None:
+                                        progress_bar.progress(min(max(percent, 0), 100), text=f"{status_text} ({percent}%)")
+                                    else:
+                                        progress_bar.progress(0, text=status_text)
+
+                                    if status_text == "completed":
+                                        status_placeholder.success("Download completed")
+                                        break
+                                    if status_text == "error":
+                                        status_placeholder.error(task.get("detail", "Download failed"))
+                                        break
+                    except Exception as exc:  # pragma: no cover - UI guard
+                        status_placeholder.error(f"Failed to start download: {exc}")
                     st.rerun()
             st.divider()
 
@@ -390,6 +535,14 @@ if not installed:
     st.warning("No models installed. Download one from the sidebar to begin chatting.")
 
 st.caption(f"{modes[st.session_state.agent_mode]} • {st.session_state.model}")
+
+current_model_meta = models_by_name.get(st.session_state.model)
+if current_model_meta and (current_model_meta.get("strengths") or current_model_meta.get("best_for")):
+    best_for = ", ".join(current_model_meta.get("best_for", []))
+    st.info(
+        f"{current_model_meta.get('display_name', st.session_state.model)} is a strong fit for {best_for or 'general use'}. "
+        f"{current_model_meta.get('strengths', '')}"
+    )
 
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
