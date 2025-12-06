@@ -184,16 +184,32 @@ if "download_task" not in st.session_state:
     st.session_state.download_task = None
 
 
-def check_api_health():
+def check_api_health(timeout: float = 8.0):
     """Lightweight API health probe with friendly error handling."""
     try:
-        response = requests.get(f"{API_URL}/health", timeout=3)
+        response = requests.get(f"{API_URL}/health", timeout=timeout)
         if response.status_code != 200:
             return {"ok": False, "details": {"status": response.status_code}}
         payload = response.json()
         return {"ok": payload.get("status") == "healthy", "details": payload}
     except Exception as exc:  # pragma: no cover - defensive UI guard
         return {"ok": False, "details": {"error": str(exc)}}
+
+
+def wait_for_api(retries: int = 1, delay: float = 1.5):
+    """Give the backend a moment to start before marking it unavailable."""
+
+    status = check_api_health()
+    if status.get("ok"):
+        return status
+
+    for _ in range(retries):
+        time.sleep(delay)
+        status = check_api_health()
+        if status.get("ok"):
+            return status
+
+    return status
 
 def load_models():
     """Fetch configured models and the recommended default from the API."""
@@ -316,7 +332,8 @@ def stream_response(message, agent_mode, model, use_memory, temp, tokens):
     except Exception as e:
         yield f"Error: {str(e)}"
 
-st.session_state.api_status = check_api_health()
+api_status = wait_for_api(retries=2)
+st.session_state.api_status = api_status
 models, _default_model, recommended_model = load_models()
 installed = [m for m in models if m.get('installed')]
 installed_names = [m['name'] for m in installed]
@@ -344,10 +361,15 @@ with st.sidebar:
     st.markdown("### 🤖 AI Assistant")
 
     api_status = st.session_state.api_status
+    detail = api_status.get("details", {})
+    error_msg = detail.get("error") or detail.get("status") or "API unavailable"
     if api_status['ok']:
         st.success("API connected")
     else:
-        st.error("API unavailable. Check that the backend is running.")
+        st.warning(f"API warming up… {error_msg}")
+        if st.button("Retry connection", use_container_width=True):
+            st.session_state.api_status = wait_for_api(retries=2)
+            st.experimental_rerun()
 
     st.markdown("**Mode**")
     modes = {'general': '💬 General', 'math': '🔢 Math', 'code': '💻 Code', 'writing': '✍️ Writing', 'design': '🎨 Design'}
@@ -590,7 +612,15 @@ st.markdown(
 )
 
 if not st.session_state.api_status['ok']:
-    st.error("Connect to the API to start chatting. Ensure `uvicorn src.api.main:app` is running.")
+    detail = st.session_state.api_status.get("details", {})
+    detail_text = detail.get("error") or detail.get("status") or "backend not reachable"
+    st.error(
+        "Connect to the API to start chatting. Ensure `uvicorn src.api.main:app` is running."
+    )
+    st.caption(f"Latest check: {detail_text}")
+    if st.button("Retry connection"):
+        st.session_state.api_status = wait_for_api(retries=2)
+        st.experimental_rerun()
     st.stop()
 
 st.caption("Friendly multi-mode assistant. Start with a question below or download a model from the sidebar.")
