@@ -180,6 +180,8 @@ if "max_tokens" not in st.session_state:
     st.session_state.max_tokens = 128
 if "api_status" not in st.session_state:
     st.session_state.api_status = {"ok": False, "details": {}}
+if "download_task" not in st.session_state:
+    st.session_state.download_task = None
 
 
 def check_api_health():
@@ -208,6 +210,38 @@ def load_models():
         )
     except Exception:
         return [], FALLBACK_MODEL, FALLBACK_MODEL
+
+
+def poll_download_task(api_url: str, task: dict):
+    """Poll a download task from the API and return status + UI-friendly fields."""
+
+    try:
+        task_resp = requests.get(
+            f"{api_url}/api/v1/models/tasks/{task['task_id']}", timeout=10
+        )
+        if task_resp.status_code != 200:
+            return {
+                "status": "error",
+                "detail": f"Unable to fetch progress ({task_resp.status_code})",
+                "percent": task.get("percent", 0),
+            }
+
+        payload = task_resp.json()
+        percent = payload.get("percent")
+        status_text = payload.get("status", "in_progress")
+        detail_text = payload.get("detail", status_text)
+
+        return {
+            "status": status_text,
+            "detail": detail_text,
+            "percent": percent if percent is not None else task.get("percent", 0),
+        }
+    except Exception as exc:  # pragma: no cover - UI guard
+        return {
+            "status": "error",
+            "detail": f"Progress check failed: {exc}",
+            "percent": task.get("percent", 0),
+        }
 
 
 def _quality_score(label: str) -> int:
@@ -400,6 +434,51 @@ with st.sidebar:
 
     # Models
     with st.expander("📦 Models"):
+        active_task = st.session_state.download_task
+
+        if active_task:
+            st.info(f"Downloading {active_task.get('model', '')}...")
+            status_placeholder = st.empty()
+            detail_placeholder = st.empty()
+            progress_bar = st.progress(
+                active_task.get("percent", 0), text="Checking download..."
+            )
+
+            elapsed = time.time() - active_task.get("started_at", time.time())
+            if elapsed > 900:
+                status_placeholder.error("Download timed out")
+                st.session_state.download_task = None
+            else:
+                task_status = poll_download_task(API_URL, active_task)
+                percent = task_status.get("percent") or 0
+                status_text = task_status.get("status", "in_progress")
+                detail_text = task_status.get("detail", status_text)
+
+                detail_placeholder.caption(detail_text)
+                progress_bar.progress(
+                    min(max(percent, 0), 100),
+                    text=f"{status_text} ({int(percent)}%)" if percent else status_text,
+                )
+
+                if status_text == "completed":
+                    status_placeholder.success("Download completed")
+                    st.session_state.download_task = None
+                    st.experimental_rerun()
+                elif status_text == "error":
+                    status_placeholder.error(detail_text)
+                    st.session_state.download_task = None
+                else:
+                    status_placeholder.info(status_text)
+                    st.session_state.download_task.update(
+                        {
+                            "percent": percent,
+                            "status": status_text,
+                            "detail": detail_text,
+                        }
+                    )
+                    time.sleep(1)
+                    st.experimental_rerun()
+
         if not installed:
             st.info("Download a model to start chatting.")
         for m in models:
@@ -455,34 +534,19 @@ with st.sidebar:
                             if not task_id:
                                 status_placeholder.error("Download task not created")
                             else:
-                                for _ in range(900):  # up to ~15 minutes
-                                    time.sleep(1)
-                                    task_resp = requests.get(
-                                        f"{API_URL}/api/v1/models/tasks/{task_id}", timeout=10
-                                    )
-                                    if task_resp.status_code != 200:
-                                        status_placeholder.error("Unable to fetch progress")
-                                        break
-
-                                    task = task_resp.json()
-                                    percent = task.get("percent")
-                                    status_text = task.get("status", "in_progress")
-                                    detail_placeholder.caption(task.get("detail", status_text))
-
-                                    if percent is not None:
-                                        progress_bar.progress(min(max(percent, 0), 100), text=f"{status_text} ({percent}%)")
-                                    else:
-                                        progress_bar.progress(0, text=status_text)
-
-                                    if status_text == "completed":
-                                        status_placeholder.success("Download completed")
-                                        break
-                                    if status_text == "error":
-                                        status_placeholder.error(task.get("detail", "Download failed"))
-                                        break
+                                st.session_state.download_task = {
+                                    "task_id": task_id,
+                                    "model": m["name"],
+                                    "percent": 0,
+                                    "started_at": time.time(),
+                                }
+                                status_placeholder.info(
+                                    "Download started — tracking progress below."
+                                )
+                                st.experimental_rerun()
                     except Exception as exc:  # pragma: no cover - UI guard
                         status_placeholder.error(f"Failed to start download: {exc}")
-                    st.rerun()
+                    st.experimental_rerun()
             st.divider()
 
 # Main
