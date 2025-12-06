@@ -3,13 +3,14 @@ Streamlit UI - Claude-inspired with real-time streaming
 """
 import json
 import os
+import time
 import uuid
 
 import requests
 import streamlit as st
 
 API_URL = os.getenv("API_URL", "http://localhost:8000")
-FALLBACK_MODEL = "llama3.2:8b"
+FALLBACK_MODEL = "qwen2.5:7b"
 
 st.set_page_config(page_title="Local AI Helper", page_icon="🤖", layout="wide")
 
@@ -17,44 +18,149 @@ st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
     * {font-family: 'Inter', sans-serif;}
-    
-    .main {background: #ffffff;}
-    [data-testid="stSidebar"] {background: #f7f7f8;}
-    
+
+    body {background: #0f172a;}
+    .main {
+        background: radial-gradient(circle at 20% 20%, rgba(88, 28, 135, 0.08), transparent 30%),
+                    radial-gradient(circle at 80% 10%, rgba(16, 163, 127, 0.08), transparent 35%),
+                    linear-gradient(145deg, #0b1220 0%, #0f172a 35%, #111827 100%);
+        color: #e5e7eb;
+    }
+
+    [data-testid="stSidebar"] {
+        background: #0b1220;
+        border-right: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    [data-testid="stSidebar"] .stButton>button,
+    [data-testid="stSidebar"] input,
+    [data-testid="stSidebar"] select,
+    [data-testid="stSidebar"] .stSelectbox>div>div {
+        background: #111827 !important;
+        color: #e5e7eb !important;
+        border: 1px solid rgba(255, 255, 255, 0.12) !important;
+    }
+
+    /* Hero + stat cards */
+    .hero {
+        padding: 1.5rem 1.25rem;
+        background: linear-gradient(120deg, rgba(16, 163, 127, 0.08), rgba(88, 28, 135, 0.12));
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 1rem;
+        box-shadow: 0 20px 80px rgba(0, 0, 0, 0.25);
+    }
+
+    .hero h1 {
+        color: #f8fafc;
+        margin-bottom: 0.25rem;
+        font-weight: 700;
+    }
+
+    .eyebrow { text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.75rem; color: #a5b4fc; }
+    .subtitle { color: #cbd5f5; margin-top: 0.35rem; }
+
+    .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        padding: 0.25rem 0.75rem;
+        border-radius: 999px;
+        font-size: 0.9rem;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        color: #e5e7eb;
+        background: rgba(255, 255, 255, 0.04);
+    }
+
+    .pill.success { color: #34d399; border-color: rgba(52, 211, 153, 0.25); background: rgba(52, 211, 153, 0.08); }
+    .pill.warn { color: #fbbf24; border-color: rgba(251, 191, 36, 0.25); background: rgba(251, 191, 36, 0.08); }
+
+    .stat-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 1rem;
+        margin-top: 1rem;
+    }
+
+    .stat-card {
+        padding: 1rem;
+        background: #0b1220;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 0.9rem;
+        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
+    }
+
+    .stat-label { color: #9ca3af; font-size: 0.9rem; margin-bottom: 0.25rem; }
+    .stat-value { color: #f8fafc; font-size: 1.4rem; font-weight: 700; }
+    .stat-meta { color: #a5b4fc; font-size: 0.9rem; margin-top: 0.15rem; }
+
     /* Chat messages */
     [data-testid="stChatMessage"] {
         padding: 1.25rem;
-        border-radius: 0.5rem;
-        margin: 0.75rem 0;
+        border-radius: 0.75rem;
+        margin: 0.85rem 0;
+        background: linear-gradient(145deg, rgba(23, 37, 84, 0.65), rgba(15, 118, 110, 0.18));
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        box-shadow: 0 14px 50px rgba(0, 0, 0, 0.28);
     }
-    
+
     [data-testid="stChatMessage"][data-testid*="user"] {
-        background: #f4f4f5;
-        border-left: 3px solid #ab68ff;
+        border-left: 4px solid #a855f7;
     }
-    
+
     [data-testid="stChatMessage"][data-testid*="assistant"] {
-        background: #ffffff;
-        border-left: 3px solid #10a37f;
+        border-left: 4px solid #22c55e;
     }
-    
+
+    /* Chat input tweaks */
+    [data-testid="stChatInput"] > div {
+        background: linear-gradient(135deg, rgba(15, 23, 42, 0.8), rgba(34, 197, 94, 0.06));
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 0.9rem !important;
+        box-shadow: 0 18px 60px rgba(0, 0, 0, 0.32);
+        padding: 0.35rem 0.4rem;
+    }
+
+    [data-testid="stChatInput"] textarea {
+        color: #e5e7eb !important;
+        background: transparent !important;
+        border: none !important;
+    }
+
+    [data-testid="stChatInput"] label p {
+        color: #cbd5f5 !important;
+    }
+
     /* Loading animation */
     @keyframes pulse {
         0%, 100% {opacity: 1;}
         50% {opacity: 0.5;}
     }
-    
-    .loading {
-        animation: pulse 1.5s ease-in-out infinite;
-    }
-    
+
+    .loading { animation: pulse 1.5s ease-in-out infinite; }
+
     /* Buttons */
     .stButton>button {
-        border-radius: 0.5rem;
-        font-weight: 500;
+        border-radius: 0.6rem;
+        font-weight: 600;
         transition: all 0.2s;
+        background: #111827;
+        color: #e5e7eb;
+        border: 1px solid rgba(255, 255, 255, 0.12);
     }
-    
+
+    .stButton>button:hover {
+        transform: translateY(-1px);
+        border-color: rgba(16, 163, 127, 0.5);
+        box-shadow: 0 8px 30px rgba(16, 163, 127, 0.12);
+    }
+
+    [data-testid="stChatInput"] textarea {
+        background: #0b1220;
+        color: #e5e7eb;
+        border-radius: 0.75rem;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
     #MainMenu, footer {visibility: hidden;}
 </style>
 """, unsafe_allow_html=True)
@@ -103,9 +209,43 @@ def load_models():
     except Exception:
         return [], FALLBACK_MODEL, FALLBACK_MODEL
 
+
+def _quality_score(label: str) -> int:
+    order = ["excellent", "very good", "good", "ok"]
+    label = (label or "").lower()
+    for idx, tag in enumerate(order[::-1]):
+        if tag in label:
+            return idx + 1
+    return 0
+
+
+def model_for_mode(mode: str, models: list[dict[str, str]], installed: list[str], recommended: str):
+    """Pick the best installed model for a mode when available."""
+    installed_set = set(installed)
+    candidates = [m for m in models if mode in m.get("best_for", [])]
+    candidates.sort(
+        key=lambda m: (_quality_score(m.get("quality", "")), m.get("size", "")),
+        reverse=True,
+    )
+
+    for candidate in candidates:
+        if candidate["name"] in installed_set:
+            return candidate["name"], candidate
+
+    if recommended in installed_set:
+        rec_model = next((m for m in models if m.get("name") == recommended), None)
+        return recommended, rec_model
+
+    if installed:
+        fallback = installed[0]
+        fallback_model = next((m for m in models if m.get("name") == fallback), None)
+        return fallback, fallback_model
+
+    return recommended, next((m for m in models if m.get("name") == recommended), None)
+
 def stream_response(message, agent_mode, model, use_memory, temp, tokens):
     try:
-        r = requests.post(
+        with requests.post(
             f"{API_URL}/api/v1/chat/stream",
             json={
                 "message": message,
@@ -118,24 +258,52 @@ def stream_response(message, agent_mode, model, use_memory, temp, tokens):
             },
             stream=True,
             timeout=300
-        )
-        
-        for line in r.iter_lines():
-            if line:
+        ) as r:
+            if r.status_code != 200:
+                try:
+                    detail = r.json().get('detail', r.text)
+                except Exception:
+                    detail = r.text
+                yield f"Error: API returned {r.status_code} - {detail}"
+                return
+
+            for line in r.iter_lines():
+                if not line:
+                    continue
                 text = line.decode('utf-8')
-                if text.startswith('data: '):
-                    data = json.loads(text[6:])
-                    if not data.get('done'):
-                        yield data.get('text', '')
+                if not text.startswith('data: '):
+                    continue
+                data = json.loads(text[6:])
+                if data.get('error'):
+                    yield f"Error: {data.get('error')}"
+                    return
+                if not data.get('done'):
+                    yield data.get('text', '')
     except Exception as e:
         yield f"Error: {str(e)}"
 
 st.session_state.api_status = check_api_health()
 models, _default_model, recommended_model = load_models()
 installed = [m for m in models if m.get('installed')]
-model_choices = [m['name'] for m in installed] or [recommended_model]
+installed_names = [m['name'] for m in installed]
+models_by_name = {m["name"]: m for m in models}
+
+recommended_installed = (
+    recommended_model
+    if recommended_model in installed_names
+    else (installed_names[0] if installed_names else recommended_model)
+)
+
+model_choices = installed_names or [recommended_installed]
 if st.session_state.model not in model_choices:
-    st.session_state.model = recommended_model
+    st.session_state.model = recommended_installed
+
+preset_model_name, preset_model_meta = model_for_mode(
+    st.session_state.agent_mode,
+    models,
+    installed_names,
+    recommended_model,
+)
 
 # Sidebar
 with st.sidebar:
@@ -151,8 +319,27 @@ with st.sidebar:
     modes = {'general': '💬 General', 'math': '🔢 Math', 'code': '💻 Code', 'writing': '✍️ Writing', 'design': '🎨 Design'}
     st.session_state.agent_mode = st.selectbox("", list(modes.keys()), format_func=lambda x: modes[x], label_visibility="collapsed")
 
+    preset_model_name, preset_model_meta = model_for_mode(
+        st.session_state.agent_mode,
+        models,
+        installed_names,
+        recommended_model,
+    )
+    if preset_model_meta:
+        st.caption(
+            f"Suggested for {modes[st.session_state.agent_mode]}: "
+            f"{preset_model_meta.get('display_name', preset_model_name)}"
+        )
+        if preset_model_name and preset_model_name != st.session_state.model:
+            if st.button("Use mode preset", use_container_width=True):
+                st.session_state.model = preset_model_name
+                st.rerun()
+
     st.markdown("**Model**")
     st.session_state.model = st.selectbox("", model_choices, label_visibility="collapsed", help="Pick an installed model. Download one below if the list is empty.")
+
+    if st.session_state.model not in installed_names and installed_names:
+        st.warning("Previously selected model is missing. Using the closest installed option instead.")
 
     use_memory = st.checkbox("💾 Memory", True)
 
@@ -216,7 +403,21 @@ with st.sidebar:
         if not installed:
             st.info("Download a model to start chatting.")
         for m in models:
-            st.markdown(f"**{m['display_name']}** • {m['size']}")
+            badges = []
+            if m['name'] == recommended_model:
+                badges.append("recommended")
+            if m['name'] == preset_model_name:
+                badges.append("preset")
+
+            badge_text = " • ".join(badges)
+            st.markdown(
+                f"**{m['display_name']}** • {m['size']} • {m.get('quality', '').title()}"
+                + (f" • {badge_text}" if badge_text else "")
+            )
+            if m.get("strengths"):
+                st.caption(m["strengths"])
+            if m.get("best_for"):
+                st.caption("Best for: " + ", ".join(m.get("best_for", [])))
 
             if m.get('installed'):
                 col1, col2 = st.columns([3, 1])
@@ -233,30 +434,100 @@ with st.sidebar:
                         st.rerun()
             else:
                 if st.button("⬇️ Download", key=f"dl{m['name']}", use_container_width=True):
-                    with st.spinner("Downloading... (5-10 min)"):
-                        try:
-                            requests.post(f"{API_URL}/api/v1/models/pull", json={"model_name": m['name']}, timeout=900)
-                            st.success("Done!")
-                        except Exception:
-                            st.error("Failed")
+                    status_placeholder = st.empty()
+                    detail_placeholder = st.empty()
+                    progress_bar = st.progress(0, text="Starting download...")
+
+                    try:
+                        resp = requests.post(
+                            f"{API_URL}/api/v1/models/pull",
+                            json={"model_name": m['name']},
+                            timeout=30,
+                        )
+                        if resp.status_code != 200:
+                            try:
+                                detail = resp.json().get('detail', resp.text)
+                            except Exception:
+                                detail = resp.text
+                            status_placeholder.error(detail or 'Failed to start download')
+                        else:
+                            task_id = resp.json().get("task_id")
+                            if not task_id:
+                                status_placeholder.error("Download task not created")
+                            else:
+                                for _ in range(900):  # up to ~15 minutes
+                                    time.sleep(1)
+                                    task_resp = requests.get(
+                                        f"{API_URL}/api/v1/models/tasks/{task_id}", timeout=10
+                                    )
+                                    if task_resp.status_code != 200:
+                                        status_placeholder.error("Unable to fetch progress")
+                                        break
+
+                                    task = task_resp.json()
+                                    percent = task.get("percent")
+                                    status_text = task.get("status", "in_progress")
+                                    detail_placeholder.caption(task.get("detail", status_text))
+
+                                    if percent is not None:
+                                        progress_bar.progress(min(max(percent, 0), 100), text=f"{status_text} ({percent}%)")
+                                    else:
+                                        progress_bar.progress(0, text=status_text)
+
+                                    if status_text == "completed":
+                                        status_placeholder.success("Download completed")
+                                        break
+                                    if status_text == "error":
+                                        status_placeholder.error(task.get("detail", "Download failed"))
+                                        break
+                    except Exception as exc:  # pragma: no cover - UI guard
+                        status_placeholder.error(f"Failed to start download: {exc}")
                     st.rerun()
             st.divider()
 
 # Main
-st.title("Local AI Helper")
+connection_state = "Online" if st.session_state.api_status.get("ok") else "Offline"
+connection_detail = st.session_state.api_status.get("details", {})
+connection_delta = connection_detail.get("status") or connection_detail.get("error") or ""
+status_pill_class = "success" if st.session_state.api_status.get("ok") else "warn"
+status_text = "API connected" if st.session_state.api_status.get("ok") else "API unavailable"
+
+st.markdown(
+    f"""
+    <div class="hero">
+        <div class="eyebrow">Local-first AI workspace</div>
+        <h1>Local AI Helper</h1>
+        <p class="subtitle">Chat, code, design and explore your models with a calmer, higher contrast interface.</p>
+        <div style="display:flex; gap:0.5rem; align-items:center; flex-wrap: wrap; margin-top: 0.6rem;">
+            <span class="pill {status_pill_class}">• {status_text}</span>
+            <span class="pill">Mode: {modes[st.session_state.agent_mode]}</span>
+            <span class="pill">Model: {st.session_state.model}</span>
+        </div>
+        <div class="stat-grid">
+            <div class="stat-card">
+                <div class="stat-label">Connection</div>
+                <div class="stat-value">{connection_state}</div>
+                <div class="stat-meta">{connection_delta}</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Installed models</div>
+                <div class="stat-value">{len(installed)}</div>
+                <div class="stat-meta">Recommended: {recommended_model}</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Session</div>
+                <div class="stat-value">{st.session_state.session_id[:8]}...</div>
+                <div class="stat-meta">Memory {"on" if use_memory else "off"}</div>
+            </div>
+        </div>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
 
 if not st.session_state.api_status['ok']:
     st.error("Connect to the API to start chatting. Ensure `uvicorn src.api.main:app` is running.")
     st.stop()
-
-summary_col1, summary_col2, summary_col3 = st.columns(3)
-connection_state = "Online" if st.session_state.api_status.get("ok") else "Offline"
-connection_detail = st.session_state.api_status.get("details", {})
-connection_delta = connection_detail.get("status") or connection_detail.get("error") or ""
-delta_color = "normal" if st.session_state.api_status.get("ok") else "inverse"
-summary_col1.metric("Connection", connection_state, delta=connection_delta, delta_color=delta_color)
-summary_col2.metric("Installed models", len(installed))
-summary_col3.metric("Recommended", recommended_model)
 
 st.caption("Friendly multi-mode assistant. Start with a question below or download a model from the sidebar.")
 
@@ -264,6 +535,14 @@ if not installed:
     st.warning("No models installed. Download one from the sidebar to begin chatting.")
 
 st.caption(f"{modes[st.session_state.agent_mode]} • {st.session_state.model}")
+
+current_model_meta = models_by_name.get(st.session_state.model)
+if current_model_meta and (current_model_meta.get("strengths") or current_model_meta.get("best_for")):
+    best_for = ", ".join(current_model_meta.get("best_for", []))
+    st.info(
+        f"{current_model_meta.get('display_name', st.session_state.model)} is a strong fit for {best_for or 'general use'}. "
+        f"{current_model_meta.get('strengths', '')}"
+    )
 
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
