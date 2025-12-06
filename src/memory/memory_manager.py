@@ -104,6 +104,10 @@ class MemoryManager:
             
             logger.info(f"Found {len(results)} results from vector search")
             
+            # Log distances for debugging
+            for i, r in enumerate(results):
+                logger.info(f"Result {i}: distance={r.get('distance')}, text={r.get('text', '')[:50]}")
+            
             # Filter by similarity threshold (lower distance = more similar)
             filtered_results = [
                 r for r in results 
@@ -111,6 +115,12 @@ class MemoryManager:
             ]
             
             logger.info(f"After filtering by threshold {similarity_threshold}: {len(filtered_results)} results")
+            
+            # If no results after filtering, increase threshold dynamically
+            if not filtered_results and results:
+                logger.warning(f"No results passed threshold {similarity_threshold}, using all results")
+                filtered_results = results[:max_chunks]
+            
             return filtered_results
             
         except Exception as e:

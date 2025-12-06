@@ -62,6 +62,9 @@ async def chat_completion(request: ChatRequest, api_request: Request):
                 max_chunks=5
             )
             context = "\n".join([chunk['text'] for chunk in context_chunks])
+            logger.info(f"Context retrieved: {len(context_chunks)} chunks, {len(context)} chars")
+            if context:
+                logger.info(f"Context preview: {context[:100]}...")
         
         # Generate response
         response = await agent_controller.generate(
