@@ -1,0 +1,139 @@
+
+services:
+  # Frontend UI
+  streamlit:
+    build: 
+      context: .
+      target: streamlit
+    container_name: ai-helper-ui
+    ports:
+      - "8501:8501"
+    depends_on:
+      - api
+    volumes:
+      - ./src:/app/src
+      - ./config:/app/config
+    environment:
+      - API_URL=http://api:8000
+    restart: unless-stopped
+    networks:
+      - ai-helper-network
+
+  # Backend API
+  api:
+    build:
+      context: .
+      target: api
+    container_name: ai-helper-api
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      chromadb:
+        condition: service_started
+      ollama:
+        condition: service_started
+    volumes:
+      - ./src:/app/src
+      - ./config:/app/config
+    environment:
+      - DATABASE_URL=postgresql://aihelper:aihelper123@postgres:5432/aihelper
+      - CHROMADB_HOST=chromadb
+      - CHROMADB_PORT=8000
+      - OLLAMA_HOST=http://ollama:11434
+      - LOG_LEVEL=INFO
+    restart: unless-stopped
+    networks:
+      - ai-helper-network
+
+  # LLM Runtime (Ollama)
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ai-helper-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    restart: unless-stopped
+    networks:
+      - ai-helper-network
+    # Uncomment for GPU support
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  # Vector Database (ChromaDB)
+  chromadb:
+    image: chromadb/chroma:0.4.24
+    container_name: ai-helper-chromadb
+    ports:
+      - "8001:8000"
+    volumes:
+      - chroma_data:/chroma/chroma
+    environment:
+      - IS_PERSISTENT=TRUE
+      - PERSIST_DIRECTORY=/chroma/chroma
+      - ANONYMIZED_TELEMETRY=FALSE
+    restart: unless-stopped
+    networks:
+      - ai-helper-network
+
+  # SQL Database (PostgreSQL)
+  postgres:
+    image: postgres:15-alpine
+    container_name: ai-helper-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_DB=aihelper
+      - POSTGRES_USER=aihelper
+      - POSTGRES_PASSWORD=aihelper123
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init_db.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aihelper"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - ai-helper-network
+
+  # Optional: PGAdmin for database management
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: ai-helper-pgadmin
+    ports:
+      - "5050:80"
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=admin@aihelper.local
+      - PGADMIN_DEFAULT_PASSWORD=admin
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      - postgres
+    restart: unless-stopped
+    networks:
+      - ai-helper-network
+    profiles:
+      - dev
+
+networks:
+  ai-helper-network:
+    driver: bridge
+
+volumes:
+  ollama_data:
+    driver: local
+  chroma_data:
+    driver: local
+  postgres_data:
+    driver: local
+  pgadmin_data:
+    driver: local

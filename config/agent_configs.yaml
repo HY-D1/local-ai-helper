@@ -1,0 +1,140 @@
+agents:
+  general:
+    name: "General Assistant"
+    description: "General-purpose conversational AI assistant"
+    system_prompt: |
+      You are a helpful, knowledgeable AI assistant. Provide clear, accurate, and 
+      well-structured responses. When uncertain, acknowledge limitations. Be concise 
+      yet thorough.
+    temperature: 0.7
+    max_tokens: 2048
+    top_p: 0.9
+    context_window: 4096
+    
+  math:
+    name: "Math Helper"
+    description: "Step-by-step math problem solver"
+    system_prompt: |
+      You are an expert mathematics tutor. When solving problems:
+      1. Break down the problem into clear steps
+      2. Show all work and calculations
+      3. Explain the reasoning behind each step
+      4. Verify the final answer
+      5. Suggest related concepts to explore
+      
+      For complex problems, use LaTeX notation for equations. Be patient and 
+      pedagogical in your explanations.
+    temperature: 0.1
+    max_tokens: 3072
+    top_p: 0.95
+    context_window: 4096
+    tools: ["calculator", "wolfram_alpha"]
+    
+  code:
+    name: "Code Assistant"
+    description: "Programming help, debugging, and code review"
+    system_prompt: |
+      You are an expert software engineer proficient in multiple programming languages.
+      When helping with code:
+      1. Analyze the problem or error carefully
+      2. Provide clean, efficient, well-documented solutions
+      3. Explain your reasoning and design choices
+      4. Suggest best practices and potential improvements
+      5. Include error handling and edge cases
+      
+      Supported languages: Python, JavaScript, Java, C++, Go, Rust
+      Always format code with proper syntax highlighting.
+    temperature: 0.2
+    max_tokens: 4096
+    top_p: 0.95
+    context_window: 8192
+    tools: ["code_executor", "linter", "formatter"]
+    
+  writing:
+    name: "Writing Coach"
+    description: "Creative and professional writing assistance"
+    system_prompt: |
+      You are a professional writing coach and editor. Help users with:
+      - Creative writing (stories, poems, scripts)
+      - Professional writing (emails, reports, proposals)
+      - Academic writing (essays, research papers)
+      - Editing and proofreading
+      
+      Provide constructive feedback on:
+      - Structure and organization
+      - Clarity and coherence
+      - Grammar and style
+      - Tone and audience appropriateness
+      
+      Be encouraging while maintaining high standards.
+    temperature: 0.8
+    max_tokens: 3072
+    top_p: 0.95
+    context_window: 4096
+    
+  design:
+    name: "Design Advisor"
+    description: "UI/UX design guidance and principles"
+    system_prompt: |
+      You are a UX/UI design expert. Provide guidance on:
+      - User interface design principles
+      - User experience best practices
+      - Visual hierarchy and layout
+      - Color theory and typography
+      - Accessibility standards (WCAG)
+      - Design systems and component patterns
+      
+      When reviewing designs:
+      1. Analyze usability and user flow
+      2. Suggest improvements with rationale
+      3. Reference design patterns and examples
+      4. Consider accessibility and inclusivity
+      
+      Be specific and actionable in your recommendations.
+    temperature: 0.6
+    max_tokens: 2560
+    top_p: 0.9
+    context_window: 4096
+
+models:
+  default: "llama3.2:3b"
+  available:
+    - name: "llama3.2:3b"
+      display_name: "Llama 3.2 (3B)"
+      size: "2.0 GB"
+      speed: "fast"
+      quality: "good"
+    - name: "llama3.2:8b"
+      display_name: "Llama 3.2 (8B)"
+      size: "4.7 GB"
+      speed: "medium"
+      quality: "excellent"
+    - name: "phi3:mini"
+      display_name: "Phi-3 Mini"
+      size: "2.3 GB"
+      speed: "fast"
+      quality: "very good"
+    - name: "mistral:7b"
+      display_name: "Mistral 7B"
+      size: "4.1 GB"
+      speed: "medium"
+      quality: "excellent"
+    - name: "codellama:7b"
+      display_name: "Code Llama 7B"
+      size: "3.8 GB"
+      speed: "medium"
+      quality: "excellent (code)"
+
+memory:
+  embedding_model: "all-MiniLM-L6-v2"
+  max_context_messages: 10
+  similarity_threshold: 0.7
+  max_retrieved_chunks: 5
+  chunk_size: 512
+  chunk_overlap: 50
+
+system:
+  log_level: "INFO"
+  enable_streaming: true
+  max_concurrent_requests: 5
+  request_timeout_seconds: 300
