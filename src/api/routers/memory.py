@@ -1,11 +1,12 @@
 """
-Memory router for conversation history management
+Memory router for conversation history management.
 """
+
 import logging
-from uuid import UUID
+from typing import Optional
+
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
-from typing import Optional, List, Dict, Any
 
 from src.memory.memory_manager import MemoryManager
 
@@ -22,33 +23,33 @@ class SearchRequest(BaseModel):
 
 @router.post("/search")
 async def search_memory(request: SearchRequest, api_request: Request):
-    """Search conversation memory"""
+    """Search conversation memory."""
     try:
         memory_manager = MemoryManager(
             vector_store=api_request.app.state.vector_store,
-            conversation_db=api_request.app.state.conversation_db
+            conversation_db=api_request.app.state.conversation_db,
         )
-        
+
         results = await memory_manager.search_conversations(
             query=request.query,
             agent_mode=request.agent_mode,
-            limit=request.limit
+            limit=request.limit,
         )
-        
+
         return {"results": results, "count": len(results)}
-    except Exception as e:
-        logger.error(f"Search error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Search error: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @router.get("/sessions")
 async def list_sessions(api_request: Request, limit: int = 20):
-    """List all sessions with preview"""
+    """List all sessions with preview."""
     try:
         async with api_request.app.state.conversation_db.pool.acquire() as conn:
             rows = await conn.fetch(
                 """
-                SELECT 
+                SELECT
                     c.session_id,
                     MIN(c.created_at) as started_at,
                     MAX(c.created_at) as last_active,
@@ -59,28 +60,31 @@ async def list_sessions(api_request: Request, limit: int = 20):
                 ORDER BY MAX(c.created_at) DESC
                 LIMIT $1
                 """,
-                limit
+                limit,
             )
-            sessions = [{
-                "session_id": str(r['session_id']),
-                "started_at": r['started_at'].isoformat(),
-                "last_active": r['last_active'].isoformat(),
-                "message_count": r['message_count'],
-                "preview": r['first_message'][:50] + "..." if r['first_message'] else "New chat"
-            } for r in rows]
+            sessions = [
+                {
+                    "session_id": str(row["session_id"]),
+                    "started_at": row["started_at"].isoformat(),
+                    "last_active": row["last_active"].isoformat(),
+                    "message_count": row["message_count"],
+                    "preview": f"{row['first_message'][:50]}..." if row["first_message"] else "New chat",
+                }
+                for row in rows
+            ]
         return {"sessions": sessions}
-    except Exception as e:
-        logger.error(f"Error listing sessions: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Error listing sessions: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @router.delete("/sessions/{session_id}")
 async def delete_session(session_id: str, api_request: Request):
-    """Delete a session and all its conversations"""
+    """Delete a session and all its conversations."""
     try:
         async with api_request.app.state.conversation_db.pool.acquire() as conn:
-            result = await conn.execute("DELETE FROM conversations WHERE session_id = $1", session_id)
+            await conn.execute("DELETE FROM conversations WHERE session_id = $1", session_id)
         return {"status": "deleted", "session_id": session_id, "deleted": True}
-    except Exception as e:
-        logger.error(f"Error deleting session: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Error deleting session: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
