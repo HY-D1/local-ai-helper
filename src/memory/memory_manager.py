@@ -17,9 +17,18 @@ with open(CONFIG_PATH, "r", encoding="utf-8") as f:
 
 
 class MemoryManager:
-    """Manages conversation memory using both vector store and SQL database."""
+    """
+    Manages conversation memory using both vector store and SQL database
+    """
 
-    def __init__(self, vector_store, conversation_db) -> None:
+    def __init__(self, vector_store, conversation_db):
+        """
+        Initialize memory manager
+
+        Args:
+            vector_store: VectorStore instance
+            conversation_db: ConversationDB instance
+        """
         self.vector_store = vector_store
         self.conversation_db = conversation_db
         self.similarity_threshold = CONFIG.get("memory", {}).get("similarity_threshold", 0.3)
@@ -34,13 +43,14 @@ class MemoryManager:
         assistant_message: str,
         agent_mode: str,
         model_used: str,
-        metadata: Optional[Dict[str, Any]] = None,
-    ) -> None:
+        metadata: Dict[str, Any] = None,
+    ):
         """Store conversation in both vector store and SQL database."""
         try:
-            logger.info("Storing conversation %s in session %s", conversation_id, session_id)
+            logger.info(f"Storing conversation {conversation_id} in session {session_id}")
 
             combined_text = f"User: {user_message}\nAssistant: {assistant_message}"
+
             full_metadata = {
                 "session_id": session_id,
                 "agent_mode": agent_mode,
@@ -67,47 +77,55 @@ class MemoryManager:
             )
             logger.info("Stored in SQL database")
 
-        except Exception as exc:  # noqa: BLE001
-            logger.error("Error storing conversation in memory: %s", exc)
+        except Exception as e:
+            logger.error(f"Error storing conversation in memory: {e}")
 
     async def retrieve_context(
         self,
         query: str,
         session_id: Optional[str] = None,
-        max_chunks: Optional[int] = None,
-        similarity_threshold: Optional[float] = None,
+        max_chunks: int = 5,
+        similarity_threshold: float = 0.3,
     ) -> List[Dict[str, Any]]:
         """Retrieve relevant context from memory."""
         try:
-            logger.info("Retrieving context for query: '%s' session: %s", query[:50], session_id)
+            logger.info("Retrieving context for query: '%s...' session: %s", query[:50], session_id)
 
-            filter_metadata = {"session_id": session_id} if session_id else None
+            filter_metadata = {}
+            if session_id:
+                filter_metadata["session_id"] = session_id
+
             results = await self.vector_store.search_similar(
                 query=query,
-                max_results=max_chunks or self.max_chunks,
-                filter_metadata=filter_metadata,
+                max_results=max_chunks,
+                filter_metadata=filter_metadata if filter_metadata else None,
             )
 
-            threshold = similarity_threshold if similarity_threshold is not None else self.similarity_threshold
+            logger.info("Found %d results from vector search", len(results))
+            for i, r in enumerate(results):
+                logger.info("Result %d: distance=%s, text=%s", i, r.get("distance"), r.get("text", "")[:50])
+
             filtered_results = [
-                result for result in results if result.get("distance", 1.0) <= threshold
+                r for r in results if r.get("distance", 1.0) <= similarity_threshold
             ]
 
+            logger.info("After filtering by threshold %s: %d results", similarity_threshold, len(filtered_results))
+
             if not filtered_results and results:
-                logger.warning(
-                    "No results passed threshold %.2f, returning top %s results",
-                    threshold,
-                    max_chunks or self.max_chunks,
-                )
-                filtered_results = results[: max_chunks or self.max_chunks]
+                logger.warning("No results passed threshold %s, using all results", similarity_threshold)
+                filtered_results = results[:max_chunks]
 
             return filtered_results
 
-        except Exception as exc:  # noqa: BLE001
-            logger.error("Error retrieving context: %s", exc)
+        except Exception as e:
+            logger.error(f"Error retrieving context: {e}")
             return []
 
-    async def get_session_history(self, session_id: str, limit: int = 50) -> List[Dict[str, Any]]:
+    async def get_session_history(
+        self,
+        session_id: str,
+        limit: int = 50,
+    ) -> List[Dict[str, Any]]:
         """Get conversation history for a session."""
         try:
             conversations = await self.conversation_db.get_session_conversations(
@@ -119,9 +137,22 @@ class MemoryManager:
             logger.error("Error getting session history: %s", exc)
             return []
 
-    async def delete_session(self, session_id: str) -> None:
-        """Delete all conversations for a session (placeholder for future GDPR support)."""
-        raise NotImplementedError
+    async def delete_session(self, session_id: str):
+        """Delete all conversations for a session across storage layers."""
+        try:
+            vector_deleted = False
+            if hasattr(self.vector_store, "delete_by_session"):
+                vector_deleted = await self.vector_store.delete_by_session(session_id)
+
+            deleted_rows = await self.conversation_db.delete_session(session_id)
+
+            return {
+                "vectors_removed": vector_deleted,
+                "deleted_rows": deleted_rows,
+            }
+        except Exception as e:
+            logger.error(f"Error deleting session {session_id}: {e}")
+            raise
 
     async def search_conversations(
         self,
@@ -131,13 +162,17 @@ class MemoryManager:
     ) -> List[Dict[str, Any]]:
         """Search across all conversations."""
         try:
-            filter_metadata = {"agent_mode": agent_mode} if agent_mode else None
+            filter_metadata = {}
+            if agent_mode:
+                filter_metadata["agent_mode"] = agent_mode
+
             results = await self.vector_store.search_similar(
                 query=query,
                 max_results=limit,
-                filter_metadata=filter_metadata,
+                filter_metadata=filter_metadata if filter_metadata else None,
             )
+
             return results
-        except Exception as exc:  # noqa: BLE001
-            logger.error("Error searching conversations: %s", exc)
+        except Exception as e:
+            logger.error(f"Error searching conversations: {e}")
             return []

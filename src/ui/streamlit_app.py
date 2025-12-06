@@ -1,13 +1,15 @@
 """
 Streamlit UI - Claude-inspired with real-time streaming
 """
-import streamlit as st
-import requests
+import json
 import os
 import uuid
-import json
 
-API_URL = os.getenv('API_URL', 'http://localhost:8000')
+import requests
+import streamlit as st
+
+API_URL = os.getenv("API_URL", "http://localhost:8000")
+FALLBACK_MODEL = "llama3.2:8b"
 
 st.set_page_config(page_title="Local AI Helper", page_icon="🤖", layout="wide")
 
@@ -58,31 +60,48 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # State
-if 'session_id' not in st.session_state:
+if "session_id" not in st.session_state:
     st.session_state.session_id = str(uuid.uuid4())
-if 'messages' not in st.session_state:
+if "messages" not in st.session_state:
     st.session_state.messages = []
-if 'agent_mode' not in st.session_state:
-    st.session_state.agent_mode = 'general'
-if 'model' not in st.session_state:
-    st.session_state.model = 'phi3:mini'
-if 'temperature' not in st.session_state:
+if "agent_mode" not in st.session_state:
+    st.session_state.agent_mode = "general"
+if "model" not in st.session_state:
+    st.session_state.model = FALLBACK_MODEL
+if "temperature" not in st.session_state:
     st.session_state.temperature = 0.7
-if 'max_tokens' not in st.session_state:
+if "max_tokens" not in st.session_state:
     st.session_state.max_tokens = 128
-if 'api_healthy' not in st.session_state:
+if "api_status" not in st.session_state:
+    st.session_state.api_status = {"ok": False, "details": {}}
+
+
+def check_api_health():
+    """Lightweight API health probe with friendly error handling."""
     try:
-        r = requests.get(f"{API_URL}/health", timeout=3)
-        st.session_state.api_healthy = r.status_code == 200
-    except:
-        st.session_state.api_healthy = False
+        response = requests.get(f"{API_URL}/health", timeout=3)
+        if response.status_code != 200:
+            return {"ok": False, "details": {"status": response.status_code}}
+        payload = response.json()
+        return {"ok": payload.get("status") == "healthy", "details": payload}
+    except Exception as exc:  # pragma: no cover - defensive UI guard
+        return {"ok": False, "details": {"error": str(exc)}}
 
 def load_models():
+    """Fetch configured models and the recommended default from the API."""
     try:
-        r = requests.get(f"{API_URL}/api/v1/models/list", timeout=10)
-        return r.json()['models'], r.json()['default'] if r.status_code == 200 else ([], 'phi3:mini')
-    except:
-        return [], 'phi3:mini'
+        response = requests.get(f"{API_URL}/api/v1/models/list", timeout=10)
+        if response.status_code != 200:
+            return [], FALLBACK_MODEL, FALLBACK_MODEL
+
+        payload = response.json()
+        return (
+            payload.get("models", []),
+            payload.get("default", FALLBACK_MODEL),
+            payload.get("recommended", payload.get("default", FALLBACK_MODEL)),
+        )
+    except Exception:
+        return [], FALLBACK_MODEL, FALLBACK_MODEL
 
 def stream_response(message, agent_mode, model, use_memory, temp, tokens):
     try:
@@ -111,32 +130,38 @@ def stream_response(message, agent_mode, model, use_memory, temp, tokens):
     except Exception as e:
         yield f"Error: {str(e)}"
 
+st.session_state.api_status = check_api_health()
+models, _default_model, recommended_model = load_models()
+installed = [m for m in models if m.get('installed')]
+model_choices = [m['name'] for m in installed] or [recommended_model]
+if st.session_state.model not in model_choices:
+    st.session_state.model = recommended_model
+
 # Sidebar
 with st.sidebar:
     st.markdown("### 🤖 AI Assistant")
-    
-    models, default = load_models()
-    installed = [m for m in models if m.get('installed')]
-    
-    if not installed:
-        st.warning("⚠️ Download a model first")
-    
+
+    api_status = st.session_state.api_status
+    if api_status['ok']:
+        st.success("API connected")
+    else:
+        st.error("API unavailable. Check that the backend is running.")
+
     st.markdown("**Mode**")
     modes = {'general': '💬 General', 'math': '🔢 Math', 'code': '💻 Code', 'writing': '✍️ Writing', 'design': '🎨 Design'}
     st.session_state.agent_mode = st.selectbox("", list(modes.keys()), format_func=lambda x: modes[x], label_visibility="collapsed")
-    
+
     st.markdown("**Model**")
-    model_opts = [m['name'] for m in models if m.get('installed')] or [default]
-    st.session_state.model = st.selectbox("", model_opts, label_visibility="collapsed")
-    
+    st.session_state.model = st.selectbox("", model_choices, label_visibility="collapsed", help="Pick an installed model. Download one below if the list is empty.")
+
     use_memory = st.checkbox("💾 Memory", True)
-    
+
     with st.expander("⚙️ Settings"):
         st.caption("**Temperature** - Higher = more creative")
-        st.session_state.temperature = st.slider("", 0.0, 1.0, 0.7, 0.1, label_visibility="collapsed")
+        st.session_state.temperature = st.slider("", 0.0, 1.0, st.session_state.temperature, 0.1, label_visibility="collapsed")
         st.caption("**Max Tokens** - Lower = faster")
-        st.session_state.max_tokens = st.select_slider("", [64, 128, 256, 512], 128, label_visibility="collapsed")
-    
+        st.session_state.max_tokens = st.select_slider("", [64, 128, 256, 512], st.session_state.max_tokens, label_visibility="collapsed")
+
     col1, col2 = st.columns(2)
     with col1:
         if st.button("🔄 New", use_container_width=True):
@@ -147,49 +172,52 @@ with st.sidebar:
         if st.button("🗑️ Clear", use_container_width=True):
             st.session_state.messages = []
             st.rerun()
-    
+
     # History
     with st.expander("📋 History"):
         try:
             r = requests.get(f"{API_URL}/api/v1/memory/sessions", timeout=10)
             if r.status_code == 200:
-                sessions = r.json()['sessions']
+                sessions = r.json().get('sessions', [])
                 if not sessions:
                     st.caption("No previous chats")
                 else:
                     for s in sessions[:10]:
                         col1, col2 = st.columns([5, 1])
                         with col1:
-                            if st.button(f"{s['preview'][:20]}...", key=f"s{s['session_id']}", use_container_width=True):
+                            label = s.get('preview') or "New chat"
+                            if st.button(f"{label[:30]}...", key=f"s{s['session_id']}", use_container_width=True, help="Load this session"):
                                 st.session_state.session_id = s['session_id']
                                 try:
                                     hr = requests.get(f"{API_URL}/api/v1/chat/sessions/{s['session_id']}/history", timeout=10)
-                                    convos = hr.json()['conversations']
+                                    convos = hr.json().get('conversations', [])
                                     msgs = []
                                     for c in reversed(convos):
                                         msgs.append({"role": "user", "content": c['user_message']})
                                         msgs.append({"role": "assistant", "content": c['assistant_message']})
                                     st.session_state.messages = msgs
-                                except:
+                                except Exception:
                                     st.session_state.messages = []
                                 st.rerun()
                         with col2:
                             if st.button("🗑", key=f"d{s['session_id']}"):
                                 try:
                                     requests.delete(f"{API_URL}/api/v1/memory/sessions/{s['session_id']}", timeout=10)
-                                except:
+                                except Exception:
                                     pass
                                 st.rerun()
             else:
                 st.caption("Unable to load history")
-        except:
+        except Exception:
             st.caption("History unavailable")
-    
+
     # Models
     with st.expander("📦 Models"):
+        if not installed:
+            st.info("Download a model to start chatting.")
         for m in models:
             st.markdown(f"**{m['display_name']}** • {m['size']}")
-            
+
             if m.get('installed'):
                 col1, col2 = st.columns([3, 1])
                 with col1:
@@ -200,7 +228,7 @@ with st.sidebar:
                             try:
                                 requests.delete(f"{API_URL}/api/v1/models/delete/{m['name']}")
                                 st.success("Deleted!")
-                            except:
+                            except Exception:
                                 st.error("Failed")
                         st.rerun()
             else:
@@ -209,28 +237,47 @@ with st.sidebar:
                         try:
                             requests.post(f"{API_URL}/api/v1/models/pull", json={"model_name": m['name']}, timeout=900)
                             st.success("Done!")
-                        except:
+                        except Exception:
                             st.error("Failed")
                     st.rerun()
             st.divider()
 
 # Main
 st.title("Local AI Helper")
+
+if not st.session_state.api_status['ok']:
+    st.error("Connect to the API to start chatting. Ensure `uvicorn src.api.main:app` is running.")
+    st.stop()
+
+summary_col1, summary_col2, summary_col3 = st.columns(3)
+connection_state = "Online" if st.session_state.api_status.get("ok") else "Offline"
+connection_detail = st.session_state.api_status.get("details", {})
+connection_delta = connection_detail.get("status") or connection_detail.get("error") or ""
+delta_color = "normal" if st.session_state.api_status.get("ok") else "inverse"
+summary_col1.metric("Connection", connection_state, delta=connection_delta, delta_color=delta_color)
+summary_col2.metric("Installed models", len(installed))
+summary_col3.metric("Recommended", recommended_model)
+
+st.caption("Friendly multi-mode assistant. Start with a question below or download a model from the sidebar.")
+
+if not installed:
+    st.warning("No models installed. Download one from the sidebar to begin chatting.")
+
 st.caption(f"{modes[st.session_state.agent_mode]} • {st.session_state.model}")
 
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
 
-if prompt := st.chat_input("Message..."):
+if installed and (prompt := st.chat_input("Message...")):
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
-    
+
     with st.chat_message("assistant"):
         placeholder = st.empty()
         full_response = ""
-        
+
         try:
             for chunk in stream_response(
                 prompt,
@@ -245,7 +292,7 @@ if prompt := st.chat_input("Message..."):
                     break
                 full_response += chunk
                 placeholder.markdown(full_response + "▌")
-            
+
             if full_response:
                 placeholder.markdown(full_response)
                 st.session_state.messages.append({"role": "assistant", "content": full_response})

@@ -13,14 +13,14 @@ logger = logging.getLogger(__name__)
 
 
 class ConversationDB:
-    """Manages conversation persistence in PostgreSQL."""
+    """Manages conversation persistence in PostgreSQL"""
 
-    def __init__(self) -> None:
+    def __init__(self):
         self.database_url = os.getenv("DATABASE_URL")
-        self.pool: Optional[asyncpg.pool.Pool] = None
+        self.pool = None
 
-    async def initialize(self) -> None:
-        """Initialize database connection pool."""
+    async def initialize(self):
+        """Initialize database connection pool"""
         try:
             self.pool = await asyncpg.create_pool(
                 self.database_url,
@@ -32,8 +32,8 @@ class ConversationDB:
             logger.error("Database initialization failed: %s", exc)
             raise
 
-    async def close(self) -> None:
-        """Close database connection pool."""
+    async def close(self):
+        """Close database connection pool"""
         if self.pool:
             await self.pool.close()
             logger.info("Database pool closed")
@@ -46,14 +46,11 @@ class ConversationDB:
         assistant_message: str,
         agent_mode: str,
         model_used: str,
-        metadata: Optional[Dict[str, Any]] = None,
-    ) -> None:
-        """Store a conversation in the database."""
+        metadata: Dict[str, Any] = None,
+    ):
+        """Store a conversation in the database"""
         try:
             import json
-
-            if not self.pool:
-                raise RuntimeError("Database pool is not initialized")
 
             async with self.pool.acquire() as conn:
                 await conn.execute(
@@ -123,5 +120,22 @@ class ConversationDB:
             async with self.pool.acquire() as conn:
                 await conn.fetchval("SELECT 1")
             return True
-        except Exception:  # noqa: BLE001
+        except Exception:
             return False
+
+    async def delete_session(self, session_id: str) -> int:
+        """Delete all conversations for a session and return deleted row count."""
+        try:
+            async with self.pool.acquire() as conn:
+                result = await conn.execute(
+                    "DELETE FROM conversations WHERE session_id = $1", session_id
+                )
+
+            try:
+                return int(result.split()[-1]) if isinstance(result, str) else 0
+            except Exception:
+                logger.warning("Could not parse delete count from result: %s", result)
+                return 0
+        except Exception as e:
+            logger.error(f"Error deleting session {session_id}: {e}")
+            raise

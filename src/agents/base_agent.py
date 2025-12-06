@@ -1,35 +1,37 @@
 """
 Base Agent class for all specialized agents.
 """
-
-import logging
+import asyncio
 import os
-from abc import ABC
+import logging
+from typing import Optional, Dict, Any, AsyncGenerator, Tuple
+import yaml
 from pathlib import Path
 from typing import Any, AsyncGenerator, Dict, Optional
 
 import ollama
 import yaml
 
+from .model_selector import select_model
+
 logger = logging.getLogger(__name__)
 
-# Load config once at module import to avoid repeated disk reads
+# Load config once at import
 CONFIG_PATH = Path(__file__).parent.parent.parent / "config" / "agent_configs.yaml"
-with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+with open(CONFIG_PATH, "r") as f:
     CONFIG = yaml.safe_load(f)
 
 
 class BaseAgent(ABC):
-    """Abstract base class for all AI agents."""
+    """
+    Abstract base class for all AI agents
+    """
 
-    def __init__(
-        self,
-        agent_mode: str,
-        model: Optional[str] = None,
-        *,
-        validate_model: Optional[bool] = None,
-    ) -> None:
-        """Initialize the agent.
+    _validated_models = set()
+
+    def __init__(self, agent_mode: str, model: Optional[str] = None):
+        """
+        Initialize the agent
 
         Args:
             agent_mode: Agent mode (general, math, code, writing, design).
@@ -40,31 +42,36 @@ class BaseAgent(ABC):
         """
         self.agent_mode = agent_mode
         self.config = CONFIG["agents"].get(agent_mode, CONFIG["agents"]["general"])
-        self.model = model or CONFIG["models"]["default"]
+        self.model = select_model(
+            model or CONFIG["models"]["default"],
+            CONFIG["models"],
+        )
         self.ollama_host = os.getenv("OLLAMA_HOST", "http://localhost:11434")
 
-        env_validation = os.getenv("SKIP_MODEL_VALIDATION", "false").lower() not in (
-            "1",
-            "true",
-            "yes",
-        )
-        self.validate_model = env_validation if validate_model is None else validate_model
-
-        if self.validate_model:
-            # Validate model exists once at initialization to avoid repeated
-            # network calls during requests.
+        # Validate model exists once per model name to avoid repeated API calls
+        if not os.getenv("SKIP_MODEL_VALIDATION") and self.model not in self._validated_models:
             try:
                 ollama.show(self.model)
-            except Exception as exc:  # noqa: BLE001 - surface validation errors
-                logger.warning("Model %s not found: %s", self.model, exc)
+                self._validated_models.add(self.model)
+            except Exception as e:
+                logger.warning(f"Model {self.model} not found: {e}")
                 raise ValueError(
                     f"Model '{self.model}' not installed. Please download it first."
-                ) from exc
+                )
 
-        logger.info("Initialized %s agent with model %s", agent_mode, self.model)
+        logger.info(f"Initialized {agent_mode} agent with model {self.model}")
 
     def _build_prompt(self, message: str, context: str = "") -> str:
-        """Build the complete prompt with system message and context."""
+        """
+        Build the complete prompt with system message and context
+
+        Args:
+            message: User message
+            context: Retrieved context from memory
+
+        Returns:
+            Complete prompt string
+        """
         system_prompt = self.config["system_prompt"]
 
         if context:
@@ -82,7 +89,19 @@ class BaseAgent(ABC):
         max_tokens: Optional[int] = None,
         **kwargs,
     ) -> Dict[str, Any]:
-        """Generate a response."""
+        """
+        Generate a response
+
+        Args:
+            message: User message
+            context: Retrieved context from memory
+            temperature: Override config temperature
+            max_tokens: Override config max_tokens
+            **kwargs: Additional generation parameters
+
+        Returns:
+            Dict with response and metadata
+        """
         try:
             # Preprocess message (can be overridden by subclasses)
             processed_message = await self.preprocess(message)
@@ -91,15 +110,12 @@ class BaseAgent(ABC):
             prompt = self._build_prompt(processed_message, context)
 
             # Use provided params or fall back to config
-            gen_temp = temperature if temperature is not None else self.config.get(
-                "temperature", 0.7
-            )
-            gen_tokens = max_tokens if max_tokens is not None else self.config.get(
-                "max_tokens", 2048
-            )
+            gen_temp = temperature if temperature is not None else self.config.get("temperature", 0.7)
+            gen_tokens = max_tokens if max_tokens is not None else self.config.get("max_tokens", 2048)
 
-            # Generate response (Ollama client is synchronous)
-            response = ollama.generate(
+            # Generate response without blocking the event loop
+            response = await asyncio.to_thread(
+                ollama.generate,
                 model=self.model,
                 prompt=prompt,
                 options={
@@ -119,8 +135,8 @@ class BaseAgent(ABC):
                 "tokens": response.get("tokens", 0),
             }
 
-        except Exception as exc:  # noqa: BLE001 - preserve stack for debugging
-            logger.error("Generation error: %s", exc)
+        except Exception as e:
+            logger.error(f"Generation error: {e}")
             raise
 
     async def generate_stream(
@@ -129,43 +145,89 @@ class BaseAgent(ABC):
         context: str = "",
         **kwargs,
     ) -> AsyncGenerator[Dict[str, Any], None]:
-        """Generate a streaming response."""
+        """
+        Generate a streaming response
+
+        Args:
+            message: User message
+            context: Retrieved context from memory
+            **kwargs: Additional generation parameters
+
+        Yields:
+            Dict chunks with partial responses
+        """
         try:
             # Preprocess
             processed_message = await self.preprocess(message)
             prompt = self._build_prompt(processed_message, context)
 
-            # Stream response
-            stream = ollama.generate(
-                model=self.model,
-                prompt=prompt,
-                stream=True,
-                options={
-                    "temperature": self.config.get("temperature", 0.7),
-                    "top_p": self.config.get("top_p", 0.9),
-                    "num_predict": self.config.get("max_tokens", 2048),
-                },
-            )
+            loop = asyncio.get_running_loop()
+            queue: asyncio.Queue[Tuple[str, Any]] = asyncio.Queue()
 
-            for chunk in stream:
-                yield {
-                    "text": chunk["response"],
-                    "done": chunk.get("done", False),
-                    "model_used": self.model,
-                }
+            def run_stream() -> None:
+                try:
+                    for chunk in ollama.generate(
+                        model=self.model,
+                        prompt=prompt,
+                        stream=True,
+                        options={
+                            "temperature": self.config.get("temperature", 0.7),
+                            "top_p": self.config.get("top_p", 0.9),
+                            "num_predict": self.config.get("max_tokens", 2048),
+                        },
+                    ):
+                        loop.call_soon_threadsafe(queue.put_nowait, ("chunk", chunk))
+                except Exception as exc:  # pragma: no cover - defensive guard
+                    loop.call_soon_threadsafe(queue.put_nowait, ("error", exc))
+                finally:
+                    loop.call_soon_threadsafe(queue.put_nowait, ("done", None))
 
-        except Exception as exc:  # noqa: BLE001 - preserve stack for debugging
-            logger.error("Stream generation error: %s", exc)
+            worker = asyncio.create_task(asyncio.to_thread(run_stream))
+
+            while True:
+                kind, payload = await queue.get()
+                if kind == "chunk":
+                    yield {
+                        "text": payload["response"],
+                        "done": payload.get("done", False),
+                        "model_used": self.model,
+                    }
+                elif kind == "error":
+                    await worker
+                    raise payload
+                elif kind == "done":
+                    break
+
+            await worker
+
+        except Exception as e:
+            logger.error(f"Stream generation error: {e}")
             raise
 
     async def preprocess(self, message: str) -> str:
-        """Preprocess user message (override in subclasses)."""
+        """
+        Preprocess user message (override in subclasses)
+
+        Args:
+            message: Raw user message
+
+        Returns:
+            Processed message
+        """
         return message
 
     async def postprocess(self, response: str) -> str:
-        """Postprocess agent response (override in subclasses)."""
+        """
+        Postprocess agent response (override in subclasses)
+
+        Args:
+            response: Raw agent response
+
+        Returns:
+            Processed response
+        """
         return response
 
     def get_config(self) -> Dict[str, Any]:
-        """Get agent configuration."""
+        """Get agent configuration"""
         return self.config
