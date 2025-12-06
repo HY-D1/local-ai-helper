@@ -3,12 +3,16 @@ import logging
 from typing import Optional, Dict, Any, AsyncGenerator, Tuple
 
 from src.agents.base_agent import BaseAgent
-from src.agents.math_agent import MathAgent
 from src.agents.code_agent import CodeAgent
-from src.agents.writing_agent import WritingAgent
 from src.agents.design_agent import DesignAgent
+from src.agents.math_agent import MathAgent
+from src.agents.writing_agent import WritingAgent
 
 logger = logging.getLogger(__name__)
+
+CONFIG_PATH = Path(__file__).parent.parent.parent / "config" / "agent_configs.yaml"
+with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+    CONFIG = yaml.safe_load(f)
 
 
 class AgentController:
@@ -83,9 +87,8 @@ class AgentController:
             Response dict
         """
         try:
-            agent = self._get_agent(agent_mode, model)
             response = await agent.generate(message, context, **kwargs)
-            logger.info(f"Generated response using {agent_mode} agent")
+            logger.info("Generated response using %s agent", agent_mode)
             return response
 
         except Exception as e:
@@ -114,7 +117,6 @@ class AgentController:
             Response chunks
         """
         try:
-            agent = self._get_agent(agent_mode, model)
             async for chunk in agent.generate_stream(message, context, **kwargs):
                 yield chunk
 

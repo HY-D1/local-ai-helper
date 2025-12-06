@@ -1,6 +1,9 @@
 """
-Design Agent - specialized for UI/UX design guidance
+Design Agent - specialized for UI/UX design guidance.
 """
+
+from typing import Optional
+
 from src.agents.base_agent import BaseAgent
 
 

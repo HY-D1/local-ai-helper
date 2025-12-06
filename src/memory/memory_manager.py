@@ -1,11 +1,19 @@
 """
-Memory Manager - coordinates vector store and conversation database
+Memory Manager - coordinates vector store and conversation database.
 """
+
 import logging
-from typing import List, Dict, Any, Optional
 from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+import yaml
 
 logger = logging.getLogger(__name__)
+
+CONFIG_PATH = Path(__file__).parent.parent.parent / "config" / "agent_configs.yaml"
+with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+    CONFIG = yaml.safe_load(f)
 
 
 class MemoryManager:
@@ -23,6 +31,8 @@ class MemoryManager:
         """
         self.vector_store = vector_store
         self.conversation_db = conversation_db
+        self.similarity_threshold = CONFIG.get("memory", {}).get("similarity_threshold", 0.3)
+        self.max_chunks = CONFIG.get("memory", {}).get("max_retrieved_chunks", 5)
         logger.info("MemoryManager initialized")
 
     async def store_conversation(
@@ -123,8 +133,8 @@ class MemoryManager:
                 limit=limit,
             )
             return conversations
-        except Exception as e:
-            logger.error(f"Error getting session history: {e}")
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Error getting session history: %s", exc)
             return []
 
     async def delete_session(self, session_id: str):

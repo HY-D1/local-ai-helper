@@ -27,7 +27,7 @@ with open(CONFIG_PATH, "r") as f:
 
 @router.get("/list")
 async def list_models():
-    """List available and installed models"""
+    """List available and installed models."""
     try:
         configured_models = CONFIG["models"]["available"]
 
@@ -59,9 +59,9 @@ async def list_models():
             "default": CONFIG["models"]["default"],
             "recommended": recommended,
         }
-    except Exception as e:
-        logger.error(f"Error listing models: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Error listing models: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 class PullModelRequest(BaseModel):
@@ -70,7 +70,7 @@ class PullModelRequest(BaseModel):
 
 @router.post("/pull")
 async def pull_model(request: PullModelRequest):
-    """Download a model from Ollama registry"""
+    """Download a model from the Ollama registry."""
     try:
         model_names = [m["name"] for m in CONFIG["models"]["available"]]
         if request.model_name not in model_names:
@@ -100,7 +100,7 @@ async def pull_model(request: PullModelRequest):
 
 @router.delete("/delete/{model_name}")
 async def delete_model(model_name: str):
-    """Delete an installed model"""
+    """Delete an installed model."""
     try:
         task_id = str(uuid.uuid4())
         TASKS[task_id] = {"status": "in_progress", "model": model_name, "action": "delete"}
@@ -124,7 +124,7 @@ async def delete_model(model_name: str):
 
 @router.get("/info/{model_name}")
 async def model_info(model_name: str):
-    """Get information about a specific model"""
+    """Get information about a specific model."""
     try:
         info = ollama.show(model_name)
         return {"model": model_name, "info": info}

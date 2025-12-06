@@ -1,6 +1,7 @@
 """
-Code Agent - specialized for programming tasks
+Code Agent - specialized for programming tasks.
 """
+
 import re
 
 from src.agents.base_agent import BaseAgent
@@ -13,8 +14,7 @@ class CodeAgent(BaseAgent):
         super().__init__(agent_mode, model)
 
     async def preprocess(self, message: str) -> str:
-        """Format code context"""
-        # Detect code blocks and preserve formatting
+        """Format code context."""
         return message
 
     async def postprocess(self, response: str) -> str:

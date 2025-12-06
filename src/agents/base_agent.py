@@ -1,5 +1,5 @@
 """
-Base Agent class for all specialized agents
+Base Agent class for all specialized agents.
 """
 import asyncio
 import os
@@ -7,8 +7,10 @@ import logging
 from typing import Optional, Dict, Any, AsyncGenerator, Tuple
 import yaml
 from pathlib import Path
+from typing import Any, AsyncGenerator, Dict, Optional
+
 import ollama
-from abc import ABC, abstractmethod
+import yaml
 
 from .model_selector import select_model
 
@@ -32,8 +34,11 @@ class BaseAgent(ABC):
         Initialize the agent
 
         Args:
-            agent_mode: Agent mode (general, math, code, writing, design)
-            model: Model to use (defaults to configured model)
+            agent_mode: Agent mode (general, math, code, writing, design).
+            model: Model to use (defaults to configured model).
+            validate_model: Whether to validate the model is installed. Defaults to
+                the ``SKIP_MODEL_VALIDATION`` environment variable (False disables
+                validation).
         """
         self.agent_mode = agent_mode
         self.config = CONFIG["agents"].get(agent_mode, CONFIG["agents"]["general"])

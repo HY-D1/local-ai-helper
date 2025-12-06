@@ -1,6 +1,9 @@
 """
-Writing Agent - specialized for creative and professional writing
+Writing Agent - specialized for creative and professional writing.
 """
+
+from typing import Optional
+
 from src.agents.base_agent import BaseAgent
 
 

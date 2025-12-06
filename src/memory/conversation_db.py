@@ -1,10 +1,10 @@
 """
-Conversation Database using PostgreSQL
+Conversation Database using PostgreSQL.
 """
-import os
+
 import logging
-from typing import List, Dict, Any, Optional
-from datetime import datetime
+import os
+from typing import Any, Dict, List, Optional
 from uuid import UUID
 
 import asyncpg
@@ -28,8 +28,8 @@ class ConversationDB:
                 max_size=10,
             )
             logger.info("Database pool initialized")
-        except Exception as e:
-            logger.error(f"Database initialization failed: {e}")
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Database initialization failed: %s", exc)
             raise
 
     async def close(self):
@@ -67,9 +67,9 @@ class ConversationDB:
                     model_used,
                     json.dumps(metadata or {}),
                 )
-            logger.debug(f"Stored conversation {conversation_id}")
-        except Exception as e:
-            logger.error(f"Error storing conversation: {e}")
+            logger.debug("Stored conversation %s", conversation_id)
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Error storing conversation: %s", exc)
             raise
 
     async def get_session_conversations(
@@ -77,8 +77,11 @@ class ConversationDB:
         session_id: str,
         limit: int = 50,
     ) -> List[Dict[str, Any]]:
-        """Get all conversations for a session"""
+        """Get all conversations for a session."""
         try:
+            if not self.pool:
+                raise RuntimeError("Database pool is not initialized")
+
             async with self.pool.acquire() as conn:
                 rows = await conn.fetch(
                     """
@@ -105,13 +108,15 @@ class ConversationDB:
                     }
                     for row in rows
                 ]
-        except Exception as e:
-            logger.error(f"Error retrieving conversations: {e}")
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Error retrieving conversations: %s", exc)
             return []
 
     async def health_check(self) -> bool:
-        """Check database health"""
+        """Check database health."""
         try:
+            if not self.pool:
+                return False
             async with self.pool.acquire() as conn:
                 await conn.fetchval("SELECT 1")
             return True
