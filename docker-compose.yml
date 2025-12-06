@@ -59,13 +59,6 @@ services:
     networks:
       - ai-helper-network
     # Uncomment for GPU support
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
 
   # Vector Database (ChromaDB)
   chromadb:
