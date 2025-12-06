@@ -17,44 +17,130 @@ st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
     * {font-family: 'Inter', sans-serif;}
-    
-    .main {background: #ffffff;}
-    [data-testid="stSidebar"] {background: #f7f7f8;}
-    
+
+    body {background: #0f172a;}
+    .main {
+        background: radial-gradient(circle at 20% 20%, rgba(88, 28, 135, 0.08), transparent 30%),
+                    radial-gradient(circle at 80% 10%, rgba(16, 163, 127, 0.08), transparent 35%),
+                    linear-gradient(145deg, #0b1220 0%, #0f172a 35%, #111827 100%);
+        color: #e5e7eb;
+    }
+
+    [data-testid="stSidebar"] {
+        background: #0b1220;
+        border-right: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    [data-testid="stSidebar"] .stButton>button,
+    [data-testid="stSidebar"] input,
+    [data-testid="stSidebar"] select,
+    [data-testid="stSidebar"] .stSelectbox>div>div {
+        background: #111827 !important;
+        color: #e5e7eb !important;
+        border: 1px solid rgba(255, 255, 255, 0.12) !important;
+    }
+
+    /* Hero + stat cards */
+    .hero {
+        padding: 1.5rem 1.25rem;
+        background: linear-gradient(120deg, rgba(16, 163, 127, 0.08), rgba(88, 28, 135, 0.12));
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 1rem;
+        box-shadow: 0 20px 80px rgba(0, 0, 0, 0.25);
+    }
+
+    .hero h1 {
+        color: #f8fafc;
+        margin-bottom: 0.25rem;
+        font-weight: 700;
+    }
+
+    .eyebrow { text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.75rem; color: #a5b4fc; }
+    .subtitle { color: #cbd5f5; margin-top: 0.35rem; }
+
+    .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        padding: 0.25rem 0.75rem;
+        border-radius: 999px;
+        font-size: 0.9rem;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        color: #e5e7eb;
+        background: rgba(255, 255, 255, 0.04);
+    }
+
+    .pill.success { color: #34d399; border-color: rgba(52, 211, 153, 0.25); background: rgba(52, 211, 153, 0.08); }
+    .pill.warn { color: #fbbf24; border-color: rgba(251, 191, 36, 0.25); background: rgba(251, 191, 36, 0.08); }
+
+    .stat-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 1rem;
+        margin-top: 1rem;
+    }
+
+    .stat-card {
+        padding: 1rem;
+        background: #0b1220;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 0.9rem;
+        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
+    }
+
+    .stat-label { color: #9ca3af; font-size: 0.9rem; margin-bottom: 0.25rem; }
+    .stat-value { color: #f8fafc; font-size: 1.4rem; font-weight: 700; }
+    .stat-meta { color: #a5b4fc; font-size: 0.9rem; margin-top: 0.15rem; }
+
     /* Chat messages */
     [data-testid="stChatMessage"] {
         padding: 1.25rem;
-        border-radius: 0.5rem;
-        margin: 0.75rem 0;
+        border-radius: 0.75rem;
+        margin: 0.85rem 0;
+        background: #0b1220;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        box-shadow: 0 14px 50px rgba(0, 0, 0, 0.3);
     }
-    
+
     [data-testid="stChatMessage"][data-testid*="user"] {
-        background: #f4f4f5;
-        border-left: 3px solid #ab68ff;
+        border-left: 4px solid #a855f7;
     }
-    
+
     [data-testid="stChatMessage"][data-testid*="assistant"] {
-        background: #ffffff;
-        border-left: 3px solid #10a37f;
+        border-left: 4px solid #22c55e;
     }
-    
+
     /* Loading animation */
     @keyframes pulse {
         0%, 100% {opacity: 1;}
         50% {opacity: 0.5;}
     }
-    
-    .loading {
-        animation: pulse 1.5s ease-in-out infinite;
-    }
-    
+
+    .loading { animation: pulse 1.5s ease-in-out infinite; }
+
     /* Buttons */
     .stButton>button {
-        border-radius: 0.5rem;
-        font-weight: 500;
+        border-radius: 0.6rem;
+        font-weight: 600;
         transition: all 0.2s;
+        background: #111827;
+        color: #e5e7eb;
+        border: 1px solid rgba(255, 255, 255, 0.12);
     }
-    
+
+    .stButton>button:hover {
+        transform: translateY(-1px);
+        border-color: rgba(16, 163, 127, 0.5);
+        box-shadow: 0 8px 30px rgba(16, 163, 127, 0.12);
+    }
+
+    [data-testid="stChatInput"] textarea {
+        background: #0b1220;
+        color: #e5e7eb;
+        border-radius: 0.75rem;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
     #MainMenu, footer {visibility: hidden;}
 </style>
 """, unsafe_allow_html=True)
@@ -105,7 +191,7 @@ def load_models():
 
 def stream_response(message, agent_mode, model, use_memory, temp, tokens):
     try:
-        r = requests.post(
+        with requests.post(
             f"{API_URL}/api/v1/chat/stream",
             json={
                 "message": message,
@@ -118,15 +204,27 @@ def stream_response(message, agent_mode, model, use_memory, temp, tokens):
             },
             stream=True,
             timeout=300
-        )
-        
-        for line in r.iter_lines():
-            if line:
+        ) as r:
+            if r.status_code != 200:
+                try:
+                    detail = r.json().get('detail', r.text)
+                except Exception:
+                    detail = r.text
+                yield f"Error: API returned {r.status_code} - {detail}"
+                return
+
+            for line in r.iter_lines():
+                if not line:
+                    continue
                 text = line.decode('utf-8')
-                if text.startswith('data: '):
-                    data = json.loads(text[6:])
-                    if not data.get('done'):
-                        yield data.get('text', '')
+                if not text.startswith('data: '):
+                    continue
+                data = json.loads(text[6:])
+                if data.get('error'):
+                    yield f"Error: {data.get('error')}"
+                    return
+                if not data.get('done'):
+                    yield data.get('text', '')
     except Exception as e:
         yield f"Error: {str(e)}"
 
@@ -243,20 +341,48 @@ with st.sidebar:
             st.divider()
 
 # Main
-st.title("Local AI Helper")
+connection_state = "Online" if st.session_state.api_status.get("ok") else "Offline"
+connection_detail = st.session_state.api_status.get("details", {})
+connection_delta = connection_detail.get("status") or connection_detail.get("error") or ""
+status_pill_class = "success" if st.session_state.api_status.get("ok") else "warn"
+status_text = "API connected" if st.session_state.api_status.get("ok") else "API unavailable"
+
+st.markdown(
+    f"""
+    <div class="hero">
+        <div class="eyebrow">Local-first AI workspace</div>
+        <h1>Local AI Helper</h1>
+        <p class="subtitle">Chat, code, design and explore your models with a calmer, higher contrast interface.</p>
+        <div style="display:flex; gap:0.5rem; align-items:center; flex-wrap: wrap; margin-top: 0.6rem;">
+            <span class="pill {status_pill_class}">• {status_text}</span>
+            <span class="pill">Mode: {modes[st.session_state.agent_mode]}</span>
+            <span class="pill">Model: {st.session_state.model}</span>
+        </div>
+        <div class="stat-grid">
+            <div class="stat-card">
+                <div class="stat-label">Connection</div>
+                <div class="stat-value">{connection_state}</div>
+                <div class="stat-meta">{connection_delta}</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Installed models</div>
+                <div class="stat-value">{len(installed)}</div>
+                <div class="stat-meta">Recommended: {recommended_model}</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Session</div>
+                <div class="stat-value">{st.session_state.session_id[:8]}...</div>
+                <div class="stat-meta">Memory {"on" if use_memory else "off"}</div>
+            </div>
+        </div>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
 
 if not st.session_state.api_status['ok']:
     st.error("Connect to the API to start chatting. Ensure `uvicorn src.api.main:app` is running.")
     st.stop()
-
-summary_col1, summary_col2, summary_col3 = st.columns(3)
-connection_state = "Online" if st.session_state.api_status.get("ok") else "Offline"
-connection_detail = st.session_state.api_status.get("details", {})
-connection_delta = connection_detail.get("status") or connection_detail.get("error") or ""
-delta_color = "normal" if st.session_state.api_status.get("ok") else "inverse"
-summary_col1.metric("Connection", connection_state, delta=connection_delta, delta_color=delta_color)
-summary_col2.metric("Installed models", len(installed))
-summary_col3.metric("Recommended", recommended_model)
 
 st.caption("Friendly multi-mode assistant. Start with a question below or download a model from the sidebar.")
 
