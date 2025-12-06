@@ -147,6 +147,8 @@ class BaseAgent(ABC):
         self,
         message: str,
         context: str = "",
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None,
         **kwargs,
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """
@@ -168,6 +170,9 @@ class BaseAgent(ABC):
             loop = asyncio.get_running_loop()
             queue: asyncio.Queue[Tuple[str, Any]] = asyncio.Queue()
 
+            gen_temp = temperature if temperature is not None else self.config.get("temperature", 0.7)
+            gen_tokens = max_tokens if max_tokens is not None else self.config.get("max_tokens", 2048)
+
             def run_stream() -> None:
                 try:
                     for chunk in ollama.generate(
@@ -175,9 +180,9 @@ class BaseAgent(ABC):
                         prompt=prompt,
                         stream=True,
                         options={
-                            "temperature": self.config.get("temperature", 0.7),
+                            "temperature": gen_temp,
                             "top_p": self.config.get("top_p", 0.9),
-                            "num_predict": self.config.get("max_tokens", 2048),
+                            "num_predict": gen_tokens,
                         },
                     ):
                         loop.call_soon_threadsafe(queue.put_nowait, ("chunk", chunk))

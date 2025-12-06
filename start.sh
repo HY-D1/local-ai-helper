@@ -13,6 +13,6 @@ echo "⏳ Waiting for services..."
 sleep 15
 
 echo "📥 Pulling default model..."
-docker exec ai-helper-ollama ollama pull llama3.2:8b
+docker exec ai-helper-ollama ollama pull qwen2.5:7b
 
 echo "✨ Started! Access at http://localhost:8501"
