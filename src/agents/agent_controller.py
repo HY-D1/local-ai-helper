@@ -1,6 +1,9 @@
 """Agent Controller - manages and routes requests to specialized agents"""
 import logging
-from typing import Optional, Dict, Any, AsyncGenerator, Tuple
+from pathlib import Path
+from typing import Any, AsyncGenerator, Dict, Optional, Tuple
+
+import yaml
 
 from src.agents.base_agent import BaseAgent
 from src.agents.code_agent import CodeAgent
@@ -87,6 +90,7 @@ class AgentController:
             Response dict
         """
         try:
+            agent = self._get_agent(agent_mode, model)
             response = await agent.generate(message, context, **kwargs)
             logger.info("Generated response using %s agent", agent_mode)
             return response
@@ -117,6 +121,7 @@ class AgentController:
             Response chunks
         """
         try:
+            agent = self._get_agent(agent_mode, model)
             async for chunk in agent.generate_stream(message, context, **kwargs):
                 yield chunk
 
