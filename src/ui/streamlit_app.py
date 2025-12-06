@@ -105,7 +105,7 @@ def load_models():
 
 def stream_response(message, agent_mode, model, use_memory, temp, tokens):
     try:
-        r = requests.post(
+        with requests.post(
             f"{API_URL}/api/v1/chat/stream",
             json={
                 "message": message,
@@ -118,15 +118,27 @@ def stream_response(message, agent_mode, model, use_memory, temp, tokens):
             },
             stream=True,
             timeout=300
-        )
-        
-        for line in r.iter_lines():
-            if line:
+        ) as r:
+            if r.status_code != 200:
+                try:
+                    detail = r.json().get('detail', r.text)
+                except Exception:
+                    detail = r.text
+                yield f"Error: API returned {r.status_code} - {detail}"
+                return
+
+            for line in r.iter_lines():
+                if not line:
+                    continue
                 text = line.decode('utf-8')
-                if text.startswith('data: '):
-                    data = json.loads(text[6:])
-                    if not data.get('done'):
-                        yield data.get('text', '')
+                if not text.startswith('data: '):
+                    continue
+                data = json.loads(text[6:])
+                if data.get('error'):
+                    yield f"Error: {data.get('error')}"
+                    return
+                if not data.get('done'):
+                    yield data.get('text', '')
     except Exception as e:
         yield f"Error: {str(e)}"
 
