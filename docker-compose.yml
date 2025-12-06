@@ -1,6 +1,4 @@
-
 services:
-  # Frontend UI
   streamlit:
     build: 
       context: .
@@ -19,7 +17,6 @@ services:
     networks:
       - ai-helper-network
 
-  # Backend API
   api:
     build:
       context: .
@@ -47,7 +44,6 @@ services:
     networks:
       - ai-helper-network
 
-  # LLM Runtime (Ollama)
   ollama:
     image: ollama/ollama:latest
     container_name: ai-helper-ollama
@@ -58,9 +54,7 @@ services:
     restart: unless-stopped
     networks:
       - ai-helper-network
-    # Uncomment for GPU support
 
-  # Vector Database (ChromaDB)
   chromadb:
     image: chromadb/chroma:0.4.24
     container_name: ai-helper-chromadb
@@ -76,7 +70,6 @@ services:
     networks:
       - ai-helper-network
 
-  # SQL Database (PostgreSQL)
   postgres:
     image: postgres:15-alpine
     container_name: ai-helper-postgres
@@ -98,35 +91,12 @@ services:
     networks:
       - ai-helper-network
 
-  # Optional: PGAdmin for database management
-  pgadmin:
-    image: dpage/pgadmin4:latest
-    container_name: ai-helper-pgadmin
-    ports:
-      - "5050:80"
-    environment:
-      - PGADMIN_DEFAULT_EMAIL=admin@aihelper.local
-      - PGADMIN_DEFAULT_PASSWORD=admin
-    volumes:
-      - pgadmin_data:/var/lib/pgadmin
-    depends_on:
-      - postgres
-    restart: unless-stopped
-    networks:
-      - ai-helper-network
-    profiles:
-      - dev
-
 networks:
   ai-helper-network:
     driver: bridge
 
 volumes:
   ollama_data:
-    driver: local
   chroma_data:
-    driver: local
   postgres_data:
-    driver: local
   pgadmin_data:
-    driver: local

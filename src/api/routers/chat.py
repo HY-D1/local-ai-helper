@@ -103,9 +103,7 @@ async def chat_completion(request: ChatRequest, api_request: Request):
 
 @router.post("/stream")
 async def chat_stream(request: ChatRequest, api_request: Request):
-    """
-    Stream a chat completion
-    """
+    """Stream a chat completion"""
     try:
         session_id = request.session_id or str(uuid4())
         agent_controller = AgentController()
@@ -127,15 +125,18 @@ async def chat_stream(request: ChatRequest, api_request: Request):
         async def generate_stream():
             full_response = ""
             conversation_id = str(uuid4())
+            model_used = request.model or 'llama3.2:3b'
             
             async for chunk in agent_controller.generate_stream(
                 message=request.message,
                 agent_mode=request.agent_mode,
                 model=request.model,
-                context=context
+                context=context,
+                temperature=request.temperature,
+                max_tokens=request.max_tokens
             ):
-                full_response += chunk['text']
-                yield f"data: {json.dumps(chunk)}\n\n"
+                full_response += chunk.get('text', '')
+                yield f"data: {json.dumps({'text': chunk.get('text', ''), 'done': False})}\n\n"
             
             # Store complete conversation
             if request.use_memory:
@@ -145,11 +146,10 @@ async def chat_stream(request: ChatRequest, api_request: Request):
                     user_message=request.message,
                     assistant_message=full_response,
                     agent_mode=request.agent_mode,
-                    model_used=chunk.get('model_used', 'unknown')
+                    model_used=model_used
                 )
             
-            # Send final metadata
-            yield f"data: {json.dumps({'done': True, 'session_id': session_id, 'conversation_id': conversation_id})}\n\n"
+            yield f"data: {json.dumps({'done': True, 'session_id': session_id})}\n\n"
         
         return StreamingResponse(
             generate_stream(),
