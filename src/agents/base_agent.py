@@ -2,12 +2,11 @@
 Base Agent class for all specialized agents.
 """
 import asyncio
-import os
 import logging
-from typing import Optional, Dict, Any, AsyncGenerator, Tuple
-import yaml
+import os
+from abc import ABC
 from pathlib import Path
-from typing import Any, AsyncGenerator, Dict, Optional
+from typing import Any, AsyncGenerator, Dict, Optional, Tuple
 
 import ollama
 import yaml
@@ -29,7 +28,9 @@ class BaseAgent(ABC):
 
     _validated_models = set()
 
-    def __init__(self, agent_mode: str, model: Optional[str] = None):
+    def __init__(
+        self, agent_mode: str, model: Optional[str] = None, *, validate_model: Optional[bool] = None
+    ):
         """
         Initialize the agent
 
@@ -49,7 +50,10 @@ class BaseAgent(ABC):
         self.ollama_host = os.getenv("OLLAMA_HOST", "http://localhost:11434")
 
         # Validate model exists once per model name to avoid repeated API calls
-        if not os.getenv("SKIP_MODEL_VALIDATION") and self.model not in self._validated_models:
+        env_skip_validation = bool(os.getenv("SKIP_MODEL_VALIDATION"))
+        self.validate_model = validate_model if validate_model is not None else not env_skip_validation
+
+        if self.validate_model and self.model not in self._validated_models:
             try:
                 ollama.show(self.model)
                 self._validated_models.add(self.model)
@@ -196,6 +200,7 @@ class BaseAgent(ABC):
                     await worker
                     raise payload
                 elif kind == "done":
+                    await worker
                     break
 
             await worker
