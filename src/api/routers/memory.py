@@ -78,9 +78,23 @@ async def list_sessions(api_request: Request, limit: int = 20):
 async def delete_session(session_id: str, api_request: Request):
     """Delete a session and all its conversations"""
     try:
-        async with api_request.app.state.conversation_db.pool.acquire() as conn:
-            result = await conn.execute("DELETE FROM conversations WHERE session_id = $1", session_id)
-        return {"status": "deleted", "session_id": session_id, "deleted": True}
+        memory_manager = MemoryManager(
+            vector_store=api_request.app.state.vector_store,
+            conversation_db=api_request.app.state.conversation_db,
+        )
+
+        deletion = await memory_manager.delete_session(session_id)
+        if not deletion["deleted_rows"]:
+            raise HTTPException(status_code=404, detail="Session not found")
+
+        return {
+            "status": "deleted",
+            "session_id": session_id,
+            "deleted_rows": deletion["deleted_rows"],
+            "vectors_removed": deletion["vectors_removed"],
+        }
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error deleting session: {e}")
         raise HTTPException(status_code=500, detail=str(e))

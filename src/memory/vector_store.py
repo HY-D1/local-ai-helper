@@ -1,11 +1,9 @@
-"""
-Vector Store for semantic search using ChromaDB
-"""
+"""Vector Store for semantic search using ChromaDB."""
 import os
 import logging
 from typing import List, Dict, Any
+
 import chromadb
-from chromadb.config import Settings
 from sentence_transformers import SentenceTransformer
 
 logger = logging.getLogger(__name__)
@@ -87,7 +85,20 @@ class VectorStore:
         except Exception as e:
             logger.error(f"Search error: {e}")
             return []
-    
+
+    async def delete_by_session(self, session_id: str) -> bool:
+        """Remove all vectors tied to a specific session."""
+        if not self.collection:
+            logger.warning("Vector store not initialized; skipping delete for session %s", session_id)
+            return False
+
+        try:
+            self.collection.delete(where={"session_id": session_id})
+            return True
+        except Exception as e:
+            logger.error("Failed to delete vectors for session %s: %s", session_id, e)
+            return False
+
     async def health_check(self) -> bool:
         """Check if vector store is healthy"""
         try:

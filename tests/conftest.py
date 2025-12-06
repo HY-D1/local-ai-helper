@@ -1,13 +1,4 @@
-"""
-Pytest configuration
-"""
-import pytest
-import asyncio
+"""Pytest configuration."""
 
-
-@pytest.fixture(scope="session")
-def event_loop():
-    """Create event loop for async tests"""
-    loop = asyncio.get_event_loop_policy().new_event_loop()
-    yield loop
-    loop.close()
+# The default asyncio event loop fixture provided by pytest-asyncio is
+# sufficient for these tests, so no custom loop management is required here.

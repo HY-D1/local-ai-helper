@@ -1,13 +1,12 @@
-"""
-Chat router for handling chat completions and streaming
-"""
+"""Chat router for handling conversation endpoints."""
+import json
 import logging
 from typing import Optional
 from uuid import uuid4
+
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
-import json
 
 from src.agents.agent_controller import AgentController
 from src.memory.memory_manager import MemoryManager
@@ -37,65 +36,55 @@ class ChatResponse(BaseModel):
 
 @router.post("/completion", response_model=ChatResponse)
 async def chat_completion(request: ChatRequest, api_request: Request):
-    """
-    Generate a chat completion
-    """
+    """Generate a chat completion."""
     try:
-        # Initialize session if not provided
         session_id = request.session_id or str(uuid4())
-        
-        # Initialize agent controller
         agent_controller = AgentController()
-        
-        # Initialize memory manager
         memory_manager = MemoryManager(
             vector_store=api_request.app.state.vector_store,
-            conversation_db=api_request.app.state.conversation_db
+            conversation_db=api_request.app.state.conversation_db,
         )
-        
-        # Retrieve relevant context from memory if enabled
+
         context = ""
         if request.use_memory:
             context_chunks = await memory_manager.retrieve_context(
                 query=request.message,
                 session_id=session_id,
-                max_chunks=5
+                max_chunks=5,
             )
-            context = "\n".join([chunk['text'] for chunk in context_chunks])
-            logger.info(f"Context retrieved: {len(context_chunks)} chunks, {len(context)} chars")
+            context = "\n".join([chunk["text"] for chunk in context_chunks])
+            logger.info("Context retrieved: %d chunks, %d chars", len(context_chunks), len(context))
             if context:
-                logger.info(f"Context preview: {context[:100]}...")
-        
-        # Generate response
+                logger.info("Context preview: %s...", context[:100])
+
         response = await agent_controller.generate(
             message=request.message,
             agent_mode=request.agent_mode,
             model=request.model,
             context=context,
             temperature=request.temperature,
-            max_tokens=request.max_tokens
+            max_tokens=request.max_tokens,
         )
-        
-        # Store conversation in memory
+
         conversation_id = str(uuid4())
         if request.use_memory:
             await memory_manager.store_conversation(
                 session_id=session_id,
                 conversation_id=conversation_id,
                 user_message=request.message,
-                assistant_message=response['response'],
+                assistant_message=response["response"],
                 agent_mode=request.agent_mode,
-                model_used=response['model_used']
+                model_used=response["model_used"],
             )
-        
+
         return ChatResponse(
-            response=response['response'],
+            response=response["response"],
             session_id=session_id,
             agent_mode=request.agent_mode,
-            model_used=response['model_used'],
-            conversation_id=conversation_id
+            model_used=response["model_used"],
+            conversation_id=conversation_id,
         )
-        
+
     except Exception as e:
         logger.error(f"Chat completion error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -103,42 +92,40 @@ async def chat_completion(request: ChatRequest, api_request: Request):
 
 @router.post("/stream")
 async def chat_stream(request: ChatRequest, api_request: Request):
-    """Stream a chat completion"""
+    """Stream a chat completion."""
     try:
         session_id = request.session_id or str(uuid4())
         agent_controller = AgentController()
         memory_manager = MemoryManager(
             vector_store=api_request.app.state.vector_store,
-            conversation_db=api_request.app.state.conversation_db
+            conversation_db=api_request.app.state.conversation_db,
         )
-        
-        # Retrieve context
+
         context = ""
         if request.use_memory:
             context_chunks = await memory_manager.retrieve_context(
                 query=request.message,
                 session_id=session_id,
-                max_chunks=5
+                max_chunks=5,
             )
-            context = "\n".join([chunk['text'] for chunk in context_chunks])
-        
+            context = "\n".join([chunk["text"] for chunk in context_chunks])
+
         async def generate_stream():
             full_response = ""
             conversation_id = str(uuid4())
-            model_used = request.model or 'llama3.2:3b'
-            
+            model_used = request.model or "llama3.2:3b"
+
             async for chunk in agent_controller.generate_stream(
                 message=request.message,
                 agent_mode=request.agent_mode,
                 model=request.model,
                 context=context,
                 temperature=request.temperature,
-                max_tokens=request.max_tokens
+                max_tokens=request.max_tokens,
             ):
-                full_response += chunk.get('text', '')
+                full_response += chunk.get("text", "")
                 yield f"data: {json.dumps({'text': chunk.get('text', ''), 'done': False})}\n\n"
-            
-            # Store complete conversation
+
             if request.use_memory:
                 await memory_manager.store_conversation(
                     session_id=session_id,
@@ -146,16 +133,16 @@ async def chat_stream(request: ChatRequest, api_request: Request):
                     user_message=request.message,
                     assistant_message=full_response,
                     agent_mode=request.agent_mode,
-                    model_used=model_used
+                    model_used=model_used,
                 )
-            
-            yield f"data: {json.dumps({'done': True, 'session_id': session_id})}\n\n"
-        
+
+            yield f"data: {json.dumps({'done': True, 'session_id': session_id, 'conversation_id': conversation_id})}\n\n"
+
         return StreamingResponse(
             generate_stream(),
-            media_type="text/event-stream"
+            media_type="text/event-stream",
         )
-        
+
     except Exception as e:
         logger.error(f"Stream error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -163,13 +150,11 @@ async def chat_stream(request: ChatRequest, api_request: Request):
 
 @router.get("/sessions/{session_id}/history")
 async def get_session_history(session_id: str, api_request: Request, limit: int = 50):
-    """
-    Get conversation history for a session
-    """
+    """Get conversation history for a session."""
     try:
         conversations = await api_request.app.state.conversation_db.get_session_conversations(
             session_id=session_id,
-            limit=limit
+            limit=limit,
         )
         return {"session_id": session_id, "conversations": conversations}
     except Exception as e:
