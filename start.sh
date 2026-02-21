@@ -66,8 +66,9 @@ check_ports() {
         read -p "Stop host Ollama and continue? (y/N) " -n 1 -r
         echo
         if [[ $REPLY =~ ^[Yy]$ ]]; then
+            killall Ollama 2>/dev/null || true
             kill $port11434 2>/dev/null || true
-            sleep 2
+            sleep 3
             print_success "Host Ollama stopped"
         else
             exit 1
