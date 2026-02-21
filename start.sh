@@ -49,6 +49,37 @@ print_info() {
     echo -e "${BLUE}ℹ️  $1${NC}"
 }
 
+# Check if ports are available
+check_ports() {
+    local port11434=$(lsof -ti:11434 2>/dev/null || echo "")
+    local port8000=$(lsof -ti:8000 2>/dev/null || echo "")
+    local port8501=$(lsof -ti:8501 2>/dev/null || echo "")
+    
+    if [ -n "$port11434" ]; then
+        print_warning "Port 11434 is already in use (PID: $port11434)"
+        echo ""
+        echo -e "${YELLOW}You have Ollama running on your host machine.${NC}"
+        echo -e "${YELLOW}Options:${NC}"
+        echo -e "  1. Stop host Ollama: ${GREEN}kill $port11434${NC} or ${GREEN}ollama stop${NC}"
+        echo -e "  2. Use host Ollama:  Edit docker-compose.yml and comment out port 11434"
+        echo ""
+        read -p "Stop host Ollama and continue? (y/N) " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            kill $port11434 2>/dev/null || true
+            sleep 2
+            print_success "Host Ollama stopped"
+        else
+            exit 1
+        fi
+    fi
+    
+    if [ -n "$port8000" ] || [ -n "$port8501" ]; then
+        print_warning "Ports 8000 or 8501 may be in use"
+        echo "If startup fails, run: ./stop.sh && ./start.sh"
+    fi
+}
+
 # Check if Docker is running
 check_docker() {
     print_info "Checking Docker..."
@@ -197,6 +228,7 @@ main() {
     print_header
     
     # Check prerequisites
+    check_ports
     check_docker
     check_docker_compose
     
