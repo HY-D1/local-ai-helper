@@ -389,7 +389,7 @@ with st.sidebar:
         if preset_model_name and preset_model_name != st.session_state.model:
             if st.button("Use mode preset", use_container_width=True):
                 st.session_state.model = preset_model_name
-                st.rerun()
+                st.experimental_rerun()
 
     st.markdown("**Model**")
     st.session_state.model = st.selectbox("", model_choices, label_visibility="collapsed", help="Pick an installed model. Download one below if the list is empty.")
@@ -407,14 +407,14 @@ with st.sidebar:
 
     col1, col2 = st.columns(2)
     with col1:
-        if st.button("🔄 New", use_container_width=True):
+        if st.button("🔄 New", use_container_width=True, key="btn_new"):
             st.session_state.session_id = str(uuid.uuid4())
             st.session_state.messages = []
-            st.rerun()
+            st.experimental_rerun()
     with col2:
-        if st.button("🗑️ Clear", use_container_width=True):
+        if st.button("🗑️ Clear", use_container_width=True, key="btn_clear"):
             st.session_state.messages = []
-            st.rerun()
+            st.experimental_rerun()
 
     # History
     with st.expander("📋 History"):
@@ -441,14 +441,14 @@ with st.sidebar:
                                     st.session_state.messages = msgs
                                 except Exception:
                                     st.session_state.messages = []
-                                st.rerun()
+                                st.experimental_rerun()
                         with col2:
                             if st.button("🗑", key=f"d{s['session_id']}"):
                                 try:
                                     requests.delete(f"{API_URL}/api/v1/memory/sessions/{s['session_id']}", timeout=10)
                                 except Exception:
                                     pass
-                                st.rerun()
+                                st.experimental_rerun()
             else:
                 st.caption("Unable to load history")
         except Exception:
@@ -532,7 +532,7 @@ with st.sidebar:
                                 st.success("Deleted!")
                             except Exception:
                                 st.error("Failed")
-                        st.rerun()
+                        st.experimental_rerun()
             else:
                 if st.button("⬇️ Download", key=f"dl{m['name']}", use_container_width=True):
                     status_placeholder = st.empty()
