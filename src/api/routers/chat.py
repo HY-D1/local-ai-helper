@@ -9,7 +9,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from src.agents.agent_controller import AgentController
-from src.memory.memory_manager import MemoryManager
+from src.memory.enhanced_memory_manager import EnhancedMemoryManager
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -21,6 +21,8 @@ class ChatRequest(BaseModel):
     agent_mode: str = Field("general", description="Agent mode (general, math, code, writing, design)")
     model: Optional[str] = Field(None, description="Model to use (defaults to configured model)")
     use_memory: bool = Field(True, description="Whether to use conversation memory")
+    use_hybrid_search: bool = Field(True, description="Use hybrid search for better retrieval")
+    use_context_compression: bool = Field(True, description="Compress long conversation history")
     stream: bool = Field(False, description="Stream response")
     temperature: Optional[float] = Field(0.7, description="Generation temperature (0-1)")
     max_tokens: Optional[int] = Field(512, description="Max response tokens")
@@ -32,6 +34,7 @@ class ChatResponse(BaseModel):
     agent_mode: str
     model_used: str
     conversation_id: str
+    context_info: Optional[dict] = None
 
 
 @router.post("/completion", response_model=ChatResponse)
@@ -40,22 +43,39 @@ async def chat_completion(request: ChatRequest, api_request: Request):
     try:
         session_id = request.session_id or str(uuid4())
         agent_controller = AgentController()
-        memory_manager = MemoryManager(
+        
+        # Use enhanced memory manager
+        memory_manager = EnhancedMemoryManager(
             vector_store=api_request.app.state.vector_store,
             conversation_db=api_request.app.state.conversation_db,
+            use_hybrid_search=request.use_hybrid_search,
+            use_context_compression=request.use_context_compression,
         )
 
+        # Retrieve enhanced context
+        context_info = None
         context = ""
         if request.use_memory:
-            context_chunks = await memory_manager.retrieve_context(
+            context_result = await memory_manager.get_enhanced_context(
                 query=request.message,
                 session_id=session_id,
+                current_message=request.message,
                 max_chunks=5,
+                max_tokens=3000,  # Leave room for response
             )
-            context = "\n".join([chunk["text"] for chunk in context_chunks])
-            logger.info("Context retrieved: %d chunks, %d chars", len(context_chunks), len(context))
-            if context:
-                logger.info("Context preview: %s...", context[:100])
+            context = context_result["context"]
+            context_info = {
+                "semantic_results": context_result.get("semantic_results", 0),
+                "history_turns": context_result.get("history_turns", 0),
+                "summarized": context_result.get("summarized", 0),
+                "estimated_tokens": context_result.get("estimated_tokens", 0),
+            }
+            logger.info(
+                "Context retrieved: %d semantic, %d history turns, %d summarized",
+                context_info["semantic_results"],
+                context_info["history_turns"],
+                context_info["summarized"],
+            )
 
         response = await agent_controller.generate(
             message=request.message,
@@ -83,6 +103,7 @@ async def chat_completion(request: ChatRequest, api_request: Request):
             agent_mode=request.agent_mode,
             model_used=response["model_used"],
             conversation_id=conversation_id,
+            context_info=context_info,
         )
 
     except Exception as e:
@@ -96,19 +117,26 @@ async def chat_stream(request: ChatRequest, api_request: Request):
     try:
         session_id = request.session_id or str(uuid4())
         agent_controller = AgentController()
-        memory_manager = MemoryManager(
+        
+        # Use enhanced memory manager
+        memory_manager = EnhancedMemoryManager(
             vector_store=api_request.app.state.vector_store,
             conversation_db=api_request.app.state.conversation_db,
+            use_hybrid_search=request.use_hybrid_search,
+            use_context_compression=request.use_context_compression,
         )
 
+        # Retrieve enhanced context
         context = ""
         if request.use_memory:
-            context_chunks = await memory_manager.retrieve_context(
+            context_result = await memory_manager.get_enhanced_context(
                 query=request.message,
                 session_id=session_id,
+                current_message=request.message,
                 max_chunks=5,
+                max_tokens=3000,
             )
-            context = "\n".join([chunk["text"] for chunk in context_chunks])
+            context = context_result["context"]
 
         async def generate_stream():
             full_response = ""
@@ -169,4 +197,39 @@ async def get_session_history(session_id: str, api_request: Request, limit: int 
         return {"session_id": session_id, "conversations": conversations}
     except Exception as e:
         logger.error(f"Error retrieving history: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/sessions/{session_id}/summarize")
+async def summarize_session(session_id: str, api_request: Request):
+    """Generate a summary of a conversation session."""
+    try:
+        # Get all conversations for the session
+        conversations = await api_request.app.state.conversation_db.get_session_conversations(
+            session_id=session_id,
+            limit=1000,
+        )
+        
+        if not conversations:
+            return {"session_id": session_id, "summary": "No conversations found."}
+        
+        # Create a simple summary (in production, use LLM for this)
+        topics = []
+        for conv in conversations:
+            msg = conv.get("user_message", "")
+            if msg:
+                # Extract first sentence or first 50 chars
+                preview = msg.split(".")[0][:50] if "." in msg else msg[:50]
+                topics.append(preview)
+        
+        summary = f"Session with {len(conversations)} exchanges. Topics: " + " | ".join(topics[:5])
+        
+        return {
+            "session_id": session_id,
+            "summary": summary,
+            "total_conversations": len(conversations),
+            "topics": topics[:10],
+        }
+    except Exception as e:
+        logger.error(f"Error summarizing session: {e}")
         raise HTTPException(status_code=500, detail=str(e))

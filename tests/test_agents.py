@@ -151,3 +151,52 @@ async def test_get_session_history(memory_manager, mock_conversation_db):
 
     history = await memory_manager.get_session_history("test_session")
     assert len(history) == 1
+
+
+# Tests for agent with tools
+@pytest.mark.asyncio
+async def test_agent_with_tools():
+    """Test that agent can use tools."""
+    agent = BaseAgent(agent_mode="math", enable_tools=True)
+    assert agent.tool_registry is not None
+    
+    # Check that default tools are registered
+    tools = agent.tool_registry.list_tools()
+    assert "calculator" in tools
+    assert "unit_converter" in tools
+    assert "code_executor" in tools
+
+
+@pytest.mark.asyncio
+async def test_agent_without_tools():
+    """Test that agent can disable tools."""
+    agent = BaseAgent(agent_mode="general", enable_tools=False)
+    assert agent.tool_registry is None
+
+
+@pytest.mark.asyncio
+async def test_agent_conversation_history():
+    """Test conversation history tracking."""
+    agent = BaseAgent(agent_mode="general")
+    
+    # Simulate some conversation
+    agent._update_history("Hello", "Hi there!")
+    agent._update_history("How are you?", "I'm doing well!")
+    
+    assert len(agent.conversation_history) == 4  # 2 user + 2 assistant
+    assert agent.conversation_history[0]["role"] == "user"
+    assert agent.conversation_history[0]["content"] == "Hello"
+
+
+@pytest.mark.asyncio
+async def test_agent_history_limit():
+    """Test that conversation history is limited."""
+    agent = BaseAgent(agent_mode="general")
+    agent.max_history = 2  # Set small limit
+    
+    # Add more messages than limit
+    for i in range(5):
+        agent._update_history(f"Message {i}", f"Response {i}")
+    
+    # Should only keep last 2 exchanges (4 messages)
+    assert len(agent.conversation_history) <= 4

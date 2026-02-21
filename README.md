@@ -55,15 +55,11 @@ A containerized multi-mode AI assistant built on open-source LLMs, featuring per
 git clone https://github.com/HY-D1/local-ai-helper.git
 cd local-ai-helper
 
-# Start all services (creates the required Docker network automatically)
-docker-compose up -d
+# Start everything (interactive, with health checks and browser opening)
+./start.sh
 
-# Wait for containers to become healthy
-docker-compose ps
-
-# Open the UI
-# macOS: open http://localhost:8501
-# Others: visit http://localhost:8501 in your browser
+# Or without auto-opening browser
+./start.sh --no-browser
 ```
 
 ### First-Time Setup in the UI
@@ -87,6 +83,10 @@ local-ai-helper/
 ├── Dockerfile
 ├── requirements.txt
 ├── README.md
+├── start.sh           # 🚀 One-command startup
+├── stop.sh            # ⏹️  Stop services
+├── status.sh          # 📊 Check status
+├── test_features.sh   # 🧪 Run tests
 ├── src/
 │   ├── agents/
 │   │   ├── base_agent.py
@@ -145,6 +145,15 @@ streamlit run src/ui/streamlit_app.py
 uvicorn src.api.main:app --reload --port 8000
 ```
 
+### Quick Commands
+```bash
+./start.sh          # Start all services (interactive)
+./stop.sh           # Stop all services
+./stop.sh --volumes # Stop and remove data volumes
+./status.sh         # Check service status
+./test_features.sh  # Run smoke tests
+```
+
 ### Using Make Commands
 ```bash
 make setup       # Install Python deps locally
@@ -168,13 +177,13 @@ pytest tests/ --cov=src --cov-report=html
 ### Services won't start
 ```bash
 # Check status
-docker-compose ps
+./status.sh
 
 # View logs
 docker-compose logs
 
 # Restart all
-docker-compose restart
+./stop.sh && ./start.sh
 ```
 
 ### "GPU driver error" on Mac
