@@ -1,237 +1,183 @@
-# Local AI Helper with Memory
+# Local AI Helper
 
-A containerized multi-mode AI assistant built on open-source LLMs, featuring persistent memory and specialized task modes.
+A containerized multi-mode AI assistant that provides persistent memory and specialized task modes for developers and power users using FastAPI, Ollama, Streamlit, ChromaDB, and PostgreSQL.
+
+## Demo
+
+![Demo](docs/demo.gif)
 
 ## Features
 
-- **Multi-Mode Operation**: Specialized presets for math, writing, code, design, and general assistance
-- **Persistent Memory**: RAG-based conversation retrieval using vector embeddings
-- **Model Flexibility**: Switch between Llama 3, Phi-3, Mistral, and other open-source models
-- **Local-First**: Fully offline capable, no API keys required
-- **Docker Deployment**: Reproducible containerized environment
+### Implemented (v1.0)
 
-## Tech Stack
+- Multi-Mode Operation: Specialized agents for math, writing, code, design, and general assistance
+- Persistent Memory: RAG-based conversation retrieval using vector embeddings (ChromaDB)
+- Model Flexibility: Support for Llama 3, Phi-3, Mistral, CodeLlama, and Qwen models
+- Web UI: Streamlit-based interface with real-time streaming responses
+- Tool System: Calculator, unit converter, and code executor tools
+- Conversation History: PostgreSQL storage for message persistence
 
-- **Backend**: Python 3.11, FastAPI
-- **LLM Runtime**: Ollama
-- **Frontend**: Streamlit
-- **Vector Database**: ChromaDB
-- **Storage**: PostgreSQL (conversation history), SQLite (metadata)
-- **Containerization**: Docker, docker-compose
-- **Version Control**: Git with feature branching
+### Planned (v2.0)
+
+- Hybrid Search: BM25 + vector search for improved retrieval
+- Context Compression: Automatic conversation summarization for long sessions
+- Multi-user Support: User authentication and session isolation
+- Custom Tool Builder: User-defined tools via configuration
 
 ## Architecture
 
-```
-┌─────────────────┐
-│   Streamlit UI  │
-└────────┬────────┘
-         │
-┌────────▼───────────────────────┐
-│      FastAPI Backend           │
-│  ┌──────────┬──────────────┐   │
-│  │  Agent   │   Memory     │   │
-│  │ Manager  │   Manager    │   │
-│  └────┬─────┴──────┬───────┘   │
-└───────┼────────────┼───────────┘
-        │            │
-┌───────▼────┐  ┌────▼──────┐
-│   Ollama   │  │ ChromaDB  │
-│   (LLMs)   │  │ (Vectors) │
-└────────────┘  └───────────┘
+The system uses a multi-service architecture: Streamlit UI proxies requests to FastAPI backend. The backend routes to specialized agents that coordinate with Ollama for LLM inference, ChromaDB for vector storage, and PostgreSQL for conversation persistence.
+
+```mermaid
+graph LR
+    A[Streamlit UI<br/>Port 8501] -->|HTTP| B[FastAPI Backend<br/>Port 8000]
+    B -->|Generate| C[Ollama<br/>Port 11434]
+    B -->|Query/Store| D[ChromaDB<br/>Port 8001]
+    B -->|CRUD| E[PostgreSQL<br/>Port 5432]
 ```
 
-## Quick Start
+## Setup
 
 ### Prerequisites
-- Docker Desktop (4.0+)
+
+- Docker Desktop 4.0+
 - 8GB+ RAM
 - 10GB+ free disk space
 
-### Installation
+### Quick Start
 
 ```bash
-# Clone repository
+# Clone and start
 git clone https://github.com/HY-D1/local-ai-helper.git
 cd local-ai-helper
-
-# Start everything (interactive, with health checks and browser opening)
 ./start.sh
 
 # Or without auto-opening browser
 ./start.sh --no-browser
 ```
 
-### First-Time Setup in the UI
-1. **Download a Model**: Sidebar → "📦 Download Models" → "⬇️ Download" on **Llama 3.2 (3B)** (recommended). Allow 5–10 minutes for the ~2GB download.
-2. **Start Chatting**: Pick an agent mode (💬 General, 🔢 Math, 💻 Code, ✍️ Writing, 🎨 Design), type a message, and press Enter. Memory is on by default.
+Access UI at `http://localhost:8501`
 
-### Verify Installation
+### Run Tests
 
 ```bash
-# Smoke test suite
+# Smoke tests (5 feature checks)
 ./test_features.sh
 
-# Expected output includes: ✅ Pass (5/5 tests)
-```
-
-## Project Structure
-
-```
-local-ai-helper/
-├── docker-compose.yml
-├── Dockerfile
-├── requirements.txt
-├── README.md
-├── start.sh           # 🚀 One-command startup
-├── stop.sh            # ⏹️  Stop services
-├── status.sh          # 📊 Check status
-├── test_features.sh   # 🧪 Run tests
-├── src/
-│   ├── agents/
-│   │   ├── base_agent.py
-│   │   ├── math_agent.py
-│   │   ├── code_agent.py
-│   │   └── writing_agent.py
-│   ├── memory/
-│   │   ├── vector_store.py
-│   │   └── conversation_db.py
-│   ├── api/
-│   │   └── main.py
-│   └── ui/
-│       └── streamlit_app.py
-├── config/
-│   └── agent_configs.yaml
-└── tests/
-    └── test_agents.py
-```
-
-## Usage
-
-### Select Mode
-Choose from preset modes:
-- **Math Helper**: Step-by-step problem solving
-- **Code Assistant**: Debug, explain, generate code
-- **Writing Coach**: Essays, emails, creative writing
-- **Design Advisor**: UI/UX suggestions, design principles
-
-### Model Selection
-Available models (auto-downloaded on first use):
-- Llama 3.2 (3B/8B)
-- Phi-3 Mini
-- Mistral 7B
-- CodeLlama 7B
-
-### Memory Management
-- Conversations automatically indexed for semantic search
-- Retrieve relevant context from past sessions
-- Export/import conversation history
-
-## Development
-
-### Local Setup (without Docker)
-```bash
-python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
-pip install -r requirements.txt
-
-# Start Ollama separately
-ollama serve
-
-# Run the web UI
-streamlit run src/ui/streamlit_app.py
-
-# Or start the API directly
-uvicorn src.api.main:app --reload --port 8000
-```
-
-### Quick Commands
-```bash
-./start.sh          # Start all services (interactive)
-./stop.sh           # Stop all services
-./stop.sh --volumes # Stop and remove data volumes
-./status.sh         # Check service status
-./test_features.sh  # Run smoke tests
-```
-
-### Using Make Commands
-```bash
-make setup       # Install Python deps locally
-make start       # docker-compose up -d
-make logs        # Tail container logs
-make test        # pytest tests/ -v
-make stop        # Stop containers
-make clean       # Remove containers & volumes
-```
-
-### Running Tests
-```bash
+# Unit and integration tests
 pytest tests/ -v
 
-# With coverage report
+# With coverage
 pytest tests/ --cov=src --cov-report=html
 ```
 
-## Troubleshooting
+### Configuration
 
-### Services won't start
-```bash
-# Check status
-./status.sh
+Environment variables (see `.env.example`):
 
-# View logs
-docker-compose logs
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `DATABASE_URL` | PostgreSQL connection | `postgresql://aihelper:aihelper123@postgres:5432/aihelper` |
+| `CHROMADB_HOST` | ChromaDB hostname | `chromadb` |
+| `CHROMADB_PORT` | ChromaDB port | `8000` |
+| `OLLAMA_HOST` | Ollama API URL | `http://ollama:11434` |
+| `LOG_LEVEL` | Logging level | `INFO` |
+| `SKIP_MODEL_VALIDATION` | Skip model checks (for testing) | `0` |
 
-# Restart all
-./stop.sh && ./start.sh
+Agent configuration in `config/agent_configs.yaml`.
+
+## API Reference
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/v1/chat` | POST | Chat completion with streaming |
+| `/api/v1/chat/history/{session_id}` | GET | Retrieve session messages |
+| `/api/v1/sessions` | GET | List all sessions |
+| `/api/v1/sessions/{session_id}` | DELETE | Delete a session |
+| `/api/v1/memory/search` | POST | Semantic search in memory |
+| `/api/v1/models` | GET | List available models |
+| `/api/v1/models/pull` | POST | Download a model |
+| `/health` | GET | Health check |
+
+**Example: Chat Request**
+```json
+{
+  "message": "What is the derivative of x^2?",
+  "session_id": "sess-123",
+  "mode": "math",
+  "model": "qwen2.5:7b"
+}
 ```
 
-### "GPU driver error" on Mac
-Comment out the GPU block for the `ollama` service in `docker-compose.yml` (lines containing `deploy`, `nvidia`, and `gpu`).
-
-### Memory not working
-```bash
-# Check ChromaDB
-curl http://localhost:8001/api/v1/collections
-
-# Should show "conversations" collection
+**Example: Chat Response (streaming)**
+```json
+{
+  "content": "The derivative of x^2 is 2x.",
+  "done": true,
+  "session_id": "sess-123"
+}
 ```
 
-### Slow responses
-- Use a smaller model (Llama 3.2 3B vs 8B)
-- Reduce `max_tokens` in sidebar settings
-- Ensure Docker has 4GB+ RAM allocated
+## Data Model / Schema
 
-## Performance Benchmarks
+PostgreSQL tables:
 
-| Model | Size | Response Time | Memory | Quality |
-|-------|------|--------------|--------|---------|
-| Llama 3.2 3B | 2.0 GB | ~1.5s | 3.2 GB | Good |
-| Llama 3.2 8B | 4.7 GB | ~3.2s | 6.2 GB | Excellent |
-| Phi-3 Mini | 2.3 GB | ~1.1s | 3.8 GB | Very Good |
-| Mistral 7B | 4.1 GB | ~2.8s | 5.9 GB | Excellent |
+**conversations**
+- `id` (UUID, PK)
+- `session_id` (TEXT)
+- `user_message` (TEXT)
+- `assistant_message` (TEXT)
+- `agent_mode` (TEXT)
+- `model_used` (TEXT)
+- `created_at` (TIMESTAMP)
+- `metadata` (JSONB)
 
-*Tested on M1 Mac, 16GB RAM*
+**sessions**
+- `id` (UUID, PK)
+- `session_id` (TEXT, UNIQUE)
+- `title` (TEXT)
+- `agent_mode` (TEXT)
+- `created_at` (TIMESTAMP)
+- `updated_at` (TIMESTAMP)
 
-## Contributing
+**user_preferences**
+- `id` (UUID, PK)
+- `user_id` (TEXT)
+- `default_model` (TEXT)
+- `default_mode` (TEXT)
+- `preferences` (JSONB)
 
-Contributions welcome! Please:
-1. Fork the repository
-2. Create feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit changes (`git commit -m 'Add amazing feature'`)
-4. Push to branch (`git push origin feature/amazing-feature`)
-5. Open Pull Request
+ChromaDB collections:
+- `conversations` - Vector embeddings of messages for semantic search
 
-## License
+## Trade-offs & Design Decisions
 
-MIT License - see LICENSE file
+**Chose:** Local LLMs via Ollama
+- **Gave up:** Cloud API access (OpenAI, Claude)
+- **Why:** Fully offline capable, no API keys required, no usage costs, data privacy
 
-## Contact
+**Chose:** ChromaDB for vector storage
+- **Gave up:** Pinecone, Weaviate, or hosted vector DBs
+- **Why:** Simple deployment in Docker, no external dependencies, sufficient for single-user/small-scale use
 
-Harry Dai - [GitHub](https://github.com/HY-D1)
+**Chose:** FastAPI + Streamlit split architecture
+- **Gave up:** Single monolithic Streamlit app
+- **Why:** Clean API/frontend separation, enables headless API usage, easier testing, supports future alternative frontends
 
-Project: https://github.com/HY-D1/local-ai-helper
+## Limitations
 
----
+- Requires Docker for full functionality; local dev setup needs manual Ollama
+- First model download takes 5-10 minutes (~2GB)
+- No built-in user authentication (single-user deployment)
+- GPU acceleration requires NVIDIA Docker setup (CPU fallback available)
+- Context window limited by model capabilities (typically 4K-8K tokens)
+- No multi-modal support (text-only)
 
-**Portfolio Project** | Demonstrates: LLM Agent Systems, RAG, Docker, System Design, Async Python
+## Next Steps
+
+- [ ] Implement hybrid search (BM25 + vector) for better retrieval accuracy
+- [ ] Add context compression for long conversation handling
+- [ ] Build user authentication and multi-tenant session isolation
+- [ ] Create custom tool builder UI
+- [ ] Add export/import for conversation history
+- [ ] Support for function calling with external APIs
